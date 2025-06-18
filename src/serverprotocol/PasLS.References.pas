@@ -29,7 +29,7 @@ uses
   { Code Tools }
   CodeToolManager, CodeCache, CTUnitGraph,
   { LazUtils }
-  LazFileUtils, AVL_Tree,
+  LazFileUtils, Laz_AVL_Tree,
   { Protocol }
   LSP.BaseTypes, LSP.Base, LSP.Basic, LSP.General, LSP.Messages, LSP.References;
 
@@ -58,8 +58,8 @@ var
   Identifier: string;
   Graph: TUsesGraph;
   Cache: TFindIdentifierReferenceCache;
-  TreeOfPCodeXYPosition: TAVLTree;
-  ANode, Node: TAVLTreeNode;
+  TreeOfPCodeXYPosition: Laz_AVL_Tree.TAVLTree;
+  ANode, Node: Laz_AVL_Tree.TAVLTreeNode;
   CodePos: PCodeXYPosition;
   Files: TStringList;
   Completed: boolean;
@@ -100,11 +100,11 @@ begin
       Graph.AddStartUnit(MainFilename);
       Graph.AddTargetUnit(DeclCode.Filename);
       Graph.Parse(true,Completed);
-      Node:=Graph.FilesTree.FindLowest;
-      while Node<>nil do begin
-        UGUnit:=TUGUnit(Node.Data);
-        Files.Add(UGUnit.Filename);
-        Node:=Node.Successor;
+      Node:=Laz_AVL_Tree.TAVLTreeNode(Graph.FilesTree.FindLowest); // here explicitly casting the return
+        while Node<>nil do begin
+          UGUnit:=TUGUnit(Node.Data);
+          Files.Add(UGUnit.Filename);
+          Node:=Laz_AVL_Tree.TAVLTreeNode(Node.Successor); // same, casting return explicitly
       end;
     finally
       Graph.Free;
@@ -131,7 +131,7 @@ begin
       // In order to show all references after any parser error, they are
       // collected in a tree
       if TreeOfPCodeXYPosition=nil then
-        TreeOfPCodeXYPosition:=CodeToolBoss.CreateTreeOfPCodeXYPosition;
+        TreeOfPCodeXYPosition:=Laz_AVL_Tree.TAVLTree(CodeToolBoss.CreateTreeOfPCodeXYPosition);
       CodeToolBoss.AddListToTreeOfPCodeXYPosition(ListOfPCodeXYPosition,
                                               TreeOfPCodeXYPosition,true,false);
     end;
@@ -141,7 +141,7 @@ begin
       // No references found
       exit;
     end;
-    ANode:=TreeOfPCodeXYPosition.FindHighest;
+    ANode:=Laz_AVL_Tree.TAVLTreeNode(TreeOfPCodeXYPosition.FindHighest);
     while ANode<>nil do begin
       CodePos:=PCodeXYPosition(ANode.Data);
       Loc := Items.Add;
@@ -149,7 +149,7 @@ begin
       Loc.Range.SetRange(CodePos^.Y - 1, CodePos^.X - 1);
    {   With CodePos^ do
         DoLog('Found: %s @ %d,%d', [Code.Filename, Y,X]);}
-      ANode:=TreeOfPCodeXYPosition.FindPrecessor(ANode);
+        ANode:=Laz_AVL_Tree.TAVLTreeNode(TreeOfPCodeXYPosition.FindPrecessor(ANode));
     end;
 
   finally
