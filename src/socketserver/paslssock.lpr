@@ -123,10 +123,16 @@ begin
   if not ParseOptions then
     exit;
   ConfigureLSP;
+  {$IFDEF UNIX}
   if FConfig.Port>0 then
     Disp:=TLSPServerTCPSocketDispatcher.Create(FConfig.Port)
   else
     Disp:=TLSPServerUnixSocketDispatcher.Create(FConfig.Unix);
+  {$ELSE}
+  if FConfig.Port>0 then
+    Disp:=TLSPServerTCPSocketDispatcher.Create(FConfig.Port);
+  {$ENDIF}
+
   Try
     Disp.SingleConnect:=FConfig.SingleConnect;
     Disp.InitSocket;
