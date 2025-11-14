@@ -72,7 +72,7 @@ type
     destructor Destroy; override;
     procedure Clear;
     procedure SerializeSymbols;
-    function AddSymbol(Name: String; Kind: TSymbolKind; FileName: String; Line, Column, RangeLen: Integer): TSymbol;
+    function AddSymbol(Name: String; Kind: TSymbolKind; FileName: String; Line, Column: Integer;EndLine,EndCol: Integer): TSymbol;
     function RequestReload: boolean;
     function Count: integer; inline;
     property RawJSON: String read GetRawJSON;
@@ -281,7 +281,7 @@ begin
     Result := true;
 end;
 
-function TSymbolTableEntry.AddSymbol(Name: String; Kind: TSymbolKind; FileName: String; Line, Column, RangeLen: Integer): TSymbol;
+function TSymbolTableEntry.AddSymbol(Name: String; Kind: TSymbolKind; FileName: String; Line, Column: Integer;EndLine,EndCol: Integer): TSymbol;
 
 var
   Symbol: TSymbol;
@@ -291,7 +291,7 @@ begin
   Symbol.name := Name;
   Symbol.kind := Kind;
   Symbol.location.URI:=PathToURI(FileName);
-  Symbol.location.Range.SetRange(Line-1,Column-1,RangeLen);
+  Symbol.location.Range.SetRange(Line-1,Column-1,EndLine-1 ,EndCol-1);
   { TODO: In the latest version of LSP container name is supported
     so consider adding some context for the hierarchy }
   //Symbol.containerName := 'Interface > TClass > Function';
@@ -390,7 +390,7 @@ end;
 
 function TSymbolExtractor.AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind; Name: String; Container: String): TSymbol;
 var
-  CodePos: TCodeXYPosition;
+  CodePos,EndPos: TCodeXYPosition;
   FileName: String;
 begin
   {$ifdef SYMBOL_DEBUG}
@@ -398,6 +398,7 @@ begin
   {$endif}
 
   Tool.CleanPosToCaret(Node.StartPos, CodePos);
+  Tool.CleanPosToCaret(Node.EndPos,EndPos);
   
   // clear existing symbols in symbol database
   // we don't know which include files are associated
@@ -413,7 +414,7 @@ begin
         end;
     end;
     
-  Result := Entry.AddSymbol(Name, Kind, CodePos.Code.FileName, CodePos.Y, CodePos.X, Node.EndPos - Node.StartPos);
+  Result := Entry.AddSymbol(Name, Kind, CodePos.Code.FileName, CodePos.Y, CodePos.X, EndPos.Y,EndPos.X);
 end;
 
 procedure TSymbolExtractor.ExtractObjCClassMethods(ClassNode, Node: TCodeTreeNode);
@@ -1105,7 +1106,7 @@ begin
   //if Entry.Modified then
     Reload(Path, False);
 
-  if Entry <> nil then
+  if (Entry <> nil) and (Entry.RawJSON <> '') then
     Result := TJSONSerializedArray.Create(Entry.RawJSON)
   else
     Result := nil;
