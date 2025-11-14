@@ -179,6 +179,17 @@ var
 begin with Params do
   begin
     Code := CodeToolBoss.FindFile(textDocument.LocalPath);
+    if Code=nil then
+       Code:=CodeToolBoss.LoadFile(textDocument.LocalPath,true,false);
+
+    if Code=nil then
+       begin
+         Result := TCompletionList.Create;
+         Result.isIncomplete:=false;
+         exit;
+       end;
+
+
     X := position.character;
     Y := position.line;
     Line := Code.GetLine(Y);
