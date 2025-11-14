@@ -86,13 +86,17 @@ end;
 
 { TCompletion }
 function TCompletion.KindForIdentifier(Identifier: TIdentifierListItem): TCompletionItemKind;
+var desc:TCodeTreeNodeDesc;
 begin
-  // the identifier has no node so we consider this a text item
+  
+  // PredefinedIdentifiers no node ,use default desc
   if Identifier.Node = nil then
-    exit(TCompletionItemKind.TextItem);
+    desc:=Identifier.DefaultDesc
+  else
+    desc:= Identifier.Node.Desc;
 
   // get completion item kind from identifier node
-  case Identifier.Node.Desc of
+  case desc of
     ctnUnit,
     ctnUseUnit,
     ctnUseUnitClearName,
