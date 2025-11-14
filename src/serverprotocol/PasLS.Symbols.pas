@@ -94,7 +94,7 @@ type
     function AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind): TSymbol; overload;
     function AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind; Name: String; Container: String = ''): TSymbol; overload;
     procedure ExtractCodeSection(Node: TCodeTreeNode);
-    procedure ExtractProcedure(ParentNode, Node: TCodeTreeNode);
+    function ExtractProcedure(ParentNode, Node: TCodeTreeNode):TSymbol;
     procedure ExtractTypeDefinition(TypeDefNode, Node: TCodeTreeNode); 
     procedure ExtractObjCClassMethods(ClassNode, Node: TCodeTreeNode);
   public
@@ -188,7 +188,7 @@ uses
   SysUtils, FileUtil, DateUtils, fpjsonrtti, 
   { Code Tools }
   CodeAtom,
-  FindDeclarationTool, KeywordFuncLists,
+  FindDeclarationTool, KeywordFuncLists,PascalParserTool,
   { Protocol }
   PasLS.Settings;
 
@@ -521,20 +521,21 @@ begin
     end;
 end;
 
-procedure TSymbolExtractor.ExtractProcedure(ParentNode, Node: TCodeTreeNode);
+function TSymbolExtractor.ExtractProcedure(ParentNode, Node: TCodeTreeNode):TSymbol;
 var
   Child: TCodeTreeNode;
-  Name: ShortString;
+  Name,ContainerName,Key: ShortString;
   Symbol: TSymbol;
 begin
+  result := nil;
   PrintNodeDebug(Node);
-    
-  if ParentNode <> nil then
-    Name := Tool.ExtractProcName(ParentNode, [])+'.'+Tool.ExtractProcName(Node, [])
-  else
-    Name := Tool.ExtractProcName(Node, []);
 
-  Symbol := TSymbol(OverloadMap.Find(Name));
+  containerName:=Tool.ExtractClassNameOfProcNode(Node);
+  Name := Tool.ExtractProcName(Node, [phpWithoutClassName]);
+
+  key:=IntToStr(CodeSection)+'.'+containerName+'.'+Name;
+  Symbol := TSymbol(OverloadMap.Find(key));
+
   if Symbol <> nil then
     begin
       { TODO: when newest LSP version is released on package control
@@ -559,7 +560,8 @@ begin
     end;
 
   Symbol := AddSymbol(Node, TSymbolKind._Function, Name);
-  OverloadMap.Add(Symbol.name, Symbol);
+  Symbol.containerName:=containerName;
+  OverloadMap.Add(Key, Symbol);
 
   // recurse into procedures to find nested procedures
 
@@ -578,14 +580,20 @@ begin
           Child := Child.NextBrother;
         end;
     end;
+  result := Symbol;
 end;
 
 procedure TSymbolExtractor.ExtractCodeSection(Node: TCodeTreeNode); 
 var
+  Symbol,LastClassSymbol: TSymbol;
   Child: TCodeTreeNode;
   Scanner: TLinkScanner;
   LinkIndex: Integer;
+  IsImplementation:Boolean;
 begin
+  IsImplementation:=(Node.Parent<>nil) and  (Node.Parent.Desc=ctnImplementation);
+  LastClassSymbol:=nil;
+
   while Node <> nil do
     begin
       PrintNodeDebug(Node);
@@ -609,8 +617,8 @@ begin
           case Node.Desc of
             ctnInterface:
               AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Interface);
-            ctnImplementation:
-              AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Implementation);
+            //ctnImplementation:
+            //  AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Implementation);
           end;
           CodeSection := Node.Desc;
           Inc(IndentLevel);
@@ -656,7 +664,23 @@ begin
           end;
 
         ctnProcedure:
-          ExtractProcedure(nil, Node);
+           begin
+
+            Symbol:= ExtractProcedure(nil, Node);
+
+            if (Symbol<>nil) and  (Symbol.containerName<>'') then
+              begin
+                 if (LastClassSymbol=nil) or  (Symbol.containerName<>LastClassSymbol.name) then
+                 begin
+                     LastClassSymbol:=AddSymbol(Node,TSymbolKind._Class,Symbol.containerName);
+                 end
+                 else
+                 begin
+                    LastClassSymbol.location.range.&end:=Symbol.location.range.&end;
+                 end;
+              end;
+
+          end;
       end;
 
       Node := Node.NextBrother;
