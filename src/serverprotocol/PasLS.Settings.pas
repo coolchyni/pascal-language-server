@@ -303,6 +303,7 @@ begin
   ignoreTextCompletions := true;
   workspaceSymbols := true;
   minimalisticCompletions := false;
+  checkInactiveRegions := true;
   
   // errors/diagnostics
   checkSyntax := false;
