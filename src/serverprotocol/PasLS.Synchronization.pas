@@ -150,7 +150,16 @@ begin
     // it need to be loaded from disk
     if Code = nil then
       Code := CodeToolBoss.LoadFile(Path, False, False);
+    
+    //rename file will failue ,need CreateFile ,It not create file in disk.(s)
+    if Code = nil then
+      begin
+        Code :=CodeToolBoss.CreateFile(Path);
+        Code.Source:=textDocument.text;
+      end;
 
+    DiagnosticsHandler.CheckSyntax(Transport,Code);
+  
     DiagnosticsHandler.CheckSyntax(Transport, Code);
     CheckInactiveRegions(Transport, Code, textDocument.uri);
 

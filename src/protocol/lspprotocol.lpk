@@ -119,6 +119,10 @@
         <Filename Value="LSP.Messages.pas"/>
         <UnitName Value="LSP.Messages"/>
       </Item>
+      <Item>
+        <Filename Value="LSP.Rename.pas"/>
+        <UnitName Value="LSP.Rename"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>

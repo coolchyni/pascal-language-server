@@ -150,9 +150,11 @@ type
     fSignatureHelpProvider: TSignatureHelpOptions;
     fExecuteCommandProvider: TExecuteCommandOptions;
     fInlayHintProvider: TInlayHintOptions;
+    fRenameProvider: TRenameOptions;
     procedure SetCompletionProvider(AValue: TCompletionOptions);
     procedure SetExecuteCommandProvider(AValue: TExecuteCommandOptions);
     procedure SetInlayHintProvider(AValue: TInlayHintOptions);
+    procedure SetRenameProvider(AValue: TRenameOptions);
     procedure SetSignatureHelpProvider(AValue: TSignatureHelpOptions);
     procedure SetTextDocumentSync(AValue: TTextDocumentSyncOptions);
     procedure SetWorkspace(AValue: TWorkspaceServerCapabilities);
@@ -177,6 +179,7 @@ type
     property signatureHelpProvider: TSignatureHelpOptions read fSignatureHelpProvider write SetSignatureHelpProvider;
     property executeCommandProvider: TExecuteCommandOptions read fExecuteCommandProvider write SetExecuteCommandProvider;
     property inlayHintProvider: TInlayHintOptions read fInlayHintProvider write SetInlayHintProvider;
+    property renameProvider: TRenameOptions read fRenameProvider write SetRenameProvider;
   end;
 
 implementation
@@ -367,6 +370,12 @@ begin
   fInlayHintProvider.Assign(AValue);
 end;
 
+procedure TServerCapabilities.SetRenameProvider(AValue: TRenameOptions);
+begin
+  if fRenameProvider=AValue then Exit;
+  fRenameProvider.Assign(AValue);
+end;
+
 procedure TServerCapabilities.SetSignatureHelpProvider(
   AValue: TSignatureHelpOptions);
 begin
@@ -397,6 +406,7 @@ begin
   fsignatureHelpProvider := TSignatureHelpOptions.Create;
   fexecuteCommandProvider := TExecuteCommandOptions.Create;
   ftextDocumentSync.change := TTextDocumentSyncKind.Full;
+  fRenameProvider := TRenameOptions.Create;
 end;
 
 destructor TServerCapabilities.destroy;
@@ -408,6 +418,7 @@ begin
   FreeAndNil(fSignatureHelpProvider);
   FreeAndNil(fExecuteCommandProvider);
   FreeAndNil(fInlayHintProvider);
+  FreeAndNil(fRenameProvider);
   inherited destroy;
 end;
 

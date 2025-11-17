@@ -598,6 +598,8 @@ begin
   signatureHelpProvider.triggerCharacters.Add(')');
   signatureHelpProvider.triggerCharacters.Add(',');
 
+  renameProvider.prepareProvider := true;
+
 end;
 
 { TLSPInitializeParams }

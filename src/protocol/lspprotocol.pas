@@ -13,7 +13,7 @@ uses
   LSP.Completion, LSP.General, LSP.Base, LSP.Options, LSP.References, 
   LSP.SignatureHelp, LSP.Synchronization, LSP.Window, LSP.WorkDoneProgress, 
   LSP.Workspace, PasLS.TextLoop, PasLS.SocketDispatcher, LSP.Streaming, 
-  LSP.BaseTypes, LSP.Messages, LazarusPackageIntf;
+  LSP.BaseTypes, LSP.Messages, LSP.Rename, LazarusPackageIntf;
 
 implementation
 

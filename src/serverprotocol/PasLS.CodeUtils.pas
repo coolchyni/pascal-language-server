@@ -29,6 +29,9 @@ uses
   SysUtils, Classes, FPJSON,
   { CodeTools }
   CodeCache, CodeTree, PascalReaderTool, PascalParserTool, IdentCompletionTool, BasicCodeTools,
+  CodeToolManager,
+  { LazUtils }
+  FileUtil,
   { Pasls }
   LSP.Basic, LSP.Messages;
 
@@ -75,6 +78,9 @@ function ParseParamList(RawList: String): TStringList; overload;
 function ParseParamList(RawList: String; AsSnippet: boolean): String; overload;
 
 function ConvertBytesToHumanReadable(bytes: cardinal): ShortString;
+
+{ Collect project unit files and optionally pre-load them to prime the CodeToolBoss cache }
+procedure GetProjectUnits(const MainFilename: String; Files: TStrings; PreLoad: Boolean; Transport: TMessageTransport = nil);
 
 implementation
 
@@ -485,5 +491,60 @@ begin
   Result := Text;
 end;
 
-end.
+procedure GetProjectUnits(const MainFilename: String; Files: TStrings; PreLoad: Boolean;
+  Transport: TMessageTransport);
+var
+  ProjectPath: String;
+  AllUnitFiles: TStringList;
+  UnitFileName: String;
+  Code: TCodeBuffer;
+  Tool: TCodeTool;
 
+  procedure DoLog(const Msg: string; Args: array of const);
+  begin
+    if Assigned(Transport) then
+      Transport.SendDiagnostic(Msg, Args);
+  end;
+
+begin
+  if Files = nil then
+    exit;
+
+  // Gather all unit files in the project directory and optionally pre-load them
+  ProjectPath := ExtractFilePath(MainFilename);
+  AllUnitFiles := TStringList.Create;
+  try
+    DoLog('Collecting units from project path: %s', [ProjectPath]);
+    FindAllFiles(AllUnitFiles, ProjectPath, '*.pas;*.pp;*.p', True);
+    DoLog('Found %d unit files in project path', [AllUnitFiles.Count]);
+
+    if PreLoad then
+    begin
+      // First load and explore the main file
+      Code := CodeToolBoss.LoadFile(MainFilename, False, False);
+      if Assigned(Code) then
+        CodeToolBoss.Explore(Code, Tool, False, False);
+    end;
+
+    for UnitFileName in AllUnitFiles do
+    begin
+      if Files.IndexOf(UnitFileName) = -1 then
+        Files.Add(UnitFileName);
+
+      if PreLoad then
+      begin
+        DoLog('Pre-loading unit file: %s', [UnitFileName]);
+        // Load file into CodeToolBoss cache (reparse=false, silent=true)
+        Code := CodeToolBoss.LoadFile(UnitFileName, False, True);
+        if Assigned(Code) then
+          CodeToolBoss.Explore(Code, Tool, False, False)
+        else
+          DoLog('Warning: failed to pre-load %s', [UnitFileName]);
+      end;
+    end;
+  finally
+    AllUnitFiles.Free;
+  end;
+end;
+
+end.
