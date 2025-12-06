@@ -498,7 +498,7 @@ uses URIParser;
 
 function PathToURI(path: String): TDocumentUri;
 begin
-  result := 'file://'+path;
+  result := FilenameToURI(path);
 end;
 
 function URIToPath(aURI: TDocumentUri): String;
@@ -507,13 +507,12 @@ var
   lURI : TUri;
 
 begin
-  Result := '';
-  if aUri = '' then
-    exit;
-  lURI := ParseURI(aURI);
-  if Not SameText(lURI.Protocol,'file') then
+  if not URIToFilename(aURI, Result) then
+  begin
     Raise EConvertError.Create('URI is not a file, cannot convert to path');
-  Result:=lURI.path + lURI.Document;
+    Result := '';
+    exit;
+  end;
 end;
 
 { TWorkspaceEdit }
