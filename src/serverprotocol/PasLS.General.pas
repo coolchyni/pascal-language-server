@@ -420,8 +420,8 @@ begin
             begin
             if Paths.IndexOf(re.Match[3])=-1 then
               Paths.Add(re.Match[3])
-            end
-          else
+            end;
+          //else
             CodeToolsOptions.FPCOptions := CodeToolsOptions.FPCOptions + Option + ' ';
         end;
 
