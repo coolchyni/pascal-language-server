@@ -28,8 +28,8 @@ uses
 
 { Global String Constants }
 const
-  kSymbolName_Interface = '==== INTERFACE ====';
-  kSymbolName_Implementation = '==== IMPLEMENTATION ====';
+  kSymbolName_Interface = 'interface';
+  kSymbolName_Implementation = 'implementation';
 
 type
   TOverloadPolicy = ( __UNUSED__,
