@@ -28,7 +28,7 @@ unit PasLS.CheckInactiveRegions;
 interface
 
 uses
-  Classes, SysUtils, FileProcs, LazUtils, LazUtilities,
+  Classes, SysUtils, FileProcs, LazUtilities,
   // Codetools
   ExprEval,DefineTemplates,CodeToolManager,CodeCache,LinkScanner,sourcelog,
   BasicCodeTools,
