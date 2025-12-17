@@ -222,6 +222,9 @@ begin
     end;
   if not ParseOptions(lParams) then
     exit;
+  SetTextCodePage(output, CP_UTF8);
+  SetTextCodePage(StdErr, CP_UTF8);
+
   aTrans:=SetupTransport;
   try
     aDisp:=TLSPClientSocketDispatcher.Create(aTrans);

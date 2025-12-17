@@ -190,6 +190,8 @@ begin
     Halt;
     end;
   aContext := nil;
+  SetTextCodePage(output, CP_UTF8);
+  SetTextCodePage(StdErr, CP_UTF8);
   aCfg := TLSPServerConfig.Create;
   try
     RegisterAllCommands;
