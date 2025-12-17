@@ -56,7 +56,7 @@ Type
   TLSPFrame = Packed Record
   private
     function GetMessageType: TLSPProtocolMessageType;
-    function GetPayloadString: UTF8String;
+    function GetPayloadString: String;
     procedure SetMessageType(AValue: TLSPProtocolMessageType);
   public
     Version : Byte;
@@ -65,7 +65,7 @@ Type
     PayloadLen : cardinal; // In network order
     PayLoad : TBytes;
     Property MessageType : TLSPProtocolMessageType Read GetMessageType Write SetMessageType;
-    Property PayloadString : UTF8String Read GetPayloadString;
+    Property PayloadString : String Read GetPayloadString;
   end;
 
   ELSPSocket = Class(Exception);
@@ -234,9 +234,16 @@ begin
   Result:=TLSPProtocolMessageType(MsgType);
 end;
 
-function TLSPFrame.GetPayloadString: UTF8String;
+function TLSPFrame.GetPayloadString: String;
+var
+  Len: SizeInt;
 begin
-  Result:=TEncoding.UTF8.GetAnsiString(Payload);
+  Len:=Length(Payload);
+  if Len=0 then
+    exit('');
+  SetLength(Result, Len);
+  Move(Payload[0], PAnsiChar(RawByteString(Result))^, Len);
+  SetCodePage(RawByteString(Result), CP_UTF8, False);
 end;
 
 procedure TLSPFrame.SetMessageType(AValue: TLSPProtocolMessageType);
