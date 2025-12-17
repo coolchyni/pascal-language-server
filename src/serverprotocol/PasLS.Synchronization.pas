@@ -143,15 +143,22 @@ begin
   begin
     Path := textDocument.LocalPath;
     Code := CodeToolBoss.FindFile(Path);
-    if Code <> nil then
-      Code.Source := textDocument.text;
 
     // the file was not found in search paths so
     // it need to be loaded from disk
     if Code = nil then
       Code := CodeToolBoss.LoadFile(Path, False, False);
+    
+    //rename file will failue ,need CreateFile ,It not create file in disk.(s)
+    if Code = nil then
+      begin
+        Code :=CodeToolBoss.CreateFile(Path);
+      end;
+    //allways update the source from the opened document
+    Code.Source:=textDocument.text;
 
     DiagnosticsHandler.CheckSyntax(Transport, Code);
+  
     CheckInactiveRegions(Transport, Code, textDocument.uri);
 
     if SymbolManager <> nil then
