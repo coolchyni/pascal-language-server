@@ -40,7 +40,7 @@ type
 implementation
 
 uses
-  PasLS.Diagnostics;
+  PasLS.Diagnostics, PasLS.CodeUtils;
   
 function TGotoDeclaraction.Process(var Params: TTextDocumentPositionParams): TLocation;
 var
@@ -57,7 +57,9 @@ begin with Params do
 
     if CodeToolBoss.FindDeclaration(Code, X + 1, Y + 1, NewCode, NewX, NewY, NewTopLine, BlockTopLine, BlockBottomLine) then
       begin
-        Result := TLocation.Create(NewCode.Filename,NewY - 1,NewX-1,0);
+        Result := TLocation.Create;
+        Result.uri := PathToURI(NewCode.Filename);
+        Result.range := GetIdentifierRangeAtPos(NewCode, NewX, NewY - 1);
       end
     else
       begin

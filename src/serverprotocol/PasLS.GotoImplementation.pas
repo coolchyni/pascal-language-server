@@ -42,7 +42,7 @@ type
 implementation
 
 uses
-  PasLS.Diagnostics, LSP.Diagnostics;
+  PasLS.Diagnostics, LSP.Diagnostics, PasLS.CodeUtils;
   
 function TGotoImplementation.Process(var Params: TTextDocumentPositionParams): TLocation;
 var
@@ -57,10 +57,12 @@ begin with Params do
     X := position.character;
     Y := position.line;
 
-    if CodeToolBoss.JumpToMethod(Code, X + 1, Y + 1, 
+    if CodeToolBoss.JumpToMethod(Code, X + 1, Y + 1,
       NewCode, NewX, NewY, NewTopLine, BlockTopLine, BlockBottomLine, RevertableJump) then
       begin
-        Result := TLocation.Create(NewCode.Filename,NewY - 1, NewX - 1,0);
+        Result := TLocation.Create;
+        Result.uri := PathToURI(NewCode.Filename);
+        Result.range := GetIdentifierRangeAtPos(NewCode, NewX, NewY - 1);
       end
     else
       begin
