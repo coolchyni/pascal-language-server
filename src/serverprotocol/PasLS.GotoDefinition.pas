@@ -49,31 +49,28 @@ var
   Code: TCodeBuffer;
   NewCode: TCodeBuffer;
   X, Y: Integer;
-  NewX, NewY, NewTopLine, BlockTopLine, BlockBottomLine: integer;
+  NewX, NewY, NewTopLine: integer;
 begin with Params do
   begin
     Code := CodeToolBoss.FindFile(textDocument.localPath);
     X := position.character;
     Y := position.line;
     { 
-      NOTE: currently goto definition is supported as goto declaration
+      NOTE: Use FindMainDeclaration to skip forward declarations and find
+      the main/complete declaration. This is the correct behavior for
+      "Go to Definition" as opposed to "Go to Declaration".
       
-      There is a definition for the following identifiers:
-        
-        - Methods
-
-      There is no definition for the following identifiers:
-  
-        - Function forwards
-        - Functions in the interface section
-        - External functions
-        - Class forwards
-        - External ObjC classes
-
-        https://www.cprogramming.com/declare_vs_define.html
-        https://stackoverflow.com/questions/1410563/what-is-the-difference-between-a-definition-and-a-declaration
+      For example, with:
+        type
+          IDocList = interface;  // forward declaration
+          ...
+          IDocList = interface(IDocAny)  // main declaration
+            ...
+          end;
+      
+      FindMainDeclaration returns the main declaration location.
     }
-    if CodeToolBoss.FindDeclaration(Code, X + 1, Y + 1, NewCode, NewX, NewY, NewTopLine, BlockTopLine, BlockBottomLine) then
+    if CodeToolBoss.FindMainDeclaration(Code, X + 1, Y + 1, NewCode, NewX, NewY, NewTopLine) then
       begin
         Result := TLocation.Create;
         Result.uri := PathToURI(NewCode.Filename);
