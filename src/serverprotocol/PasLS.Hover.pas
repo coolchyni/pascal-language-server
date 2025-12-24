@@ -127,7 +127,7 @@ var
   X, Y: Integer;
   Hint, DocComments: String;
   DeclCode: TCodeBuffer;
-  DeclX, DeclY, NewTopLine, BlockTopLine, BlockBottomLine: Integer;
+  DeclX, DeclY, NewTopLine: Integer;
 begin with Params do
   begin
     Code := CodeToolBoss.FindFile(textDocument.LocalPath);
@@ -152,15 +152,15 @@ begin with Params do
     Hint := '```pascal' + #10 + Hint + #10 + '```';
 
     // Try to get documentation comments
-    // First find the declaration location, then get comments from there
+    // Use FindMainDeclaration to skip forward declarations and find the main
+    // declaration where documentation comments are typically located.
     try
       DocComments := '';
-      // Try to find declaration location first
-      if CodeToolBoss.FindDeclaration(Code, X + 1, Y + 1, DeclCode, DeclX, DeclY,
-                                       NewTopLine, BlockTopLine, BlockBottomLine) then
+      // Try to find main declaration location (skips forward declarations)
+      if CodeToolBoss.FindMainDeclaration(Code, X + 1, Y + 1, DeclCode, DeclX, DeclY, NewTopLine) then
         DocComments := ExtractPasDocComments(DeclCode, DeclX, DeclY)
       else
-        // If FindDeclaration fails, try current position (might be at declaration already)
+        // If FindMainDeclaration fails, try current position (might be at declaration already)
         DocComments := ExtractPasDocComments(Code, X + 1, Y + 1);
 
       if DocComments <> '' then
@@ -175,7 +175,6 @@ begin with Params do
     Result.range.SetRange(Y, X);
   end;
 end;
-
 
 end.
 
