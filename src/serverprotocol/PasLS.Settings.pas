@@ -48,11 +48,13 @@ type
     fProgram: String;
     fSymbolDatabase: String;
     fFPCOptions: TStrings;
+    fExcludeWorkspaceFolders: TStrings;
     fCodeToolsConfig: String;
     fMaximumCompletions: Integer;
     fOverloadPolicy: TOverloadPolicy;
     fConfig: String;
     procedure SetFPCOptions(AValue: TStrings);
+    procedure SetExcludeWorkspaceFolders(AValue: TStrings);
   published
     // Path to the main program file for resolving references
     // if not available the path of the current document will be used
@@ -77,6 +79,8 @@ type
     property includeWorkspaceFoldersAsUnitPaths: Boolean read fBooleans[2] write fBooleans[2];
     // workspaces folders will be added to include paths (i.e. -Fi)
     property includeWorkspaceFoldersAsIncludePaths: Boolean read fBooleans[3] write fBooleans[3];
+    // workspace folder paths to exclude from workspace path collection
+    property excludeWorkspaceFolders: TStrings read fExcludeWorkspaceFolders write SetExcludeWorkspaceFolders;
     // syntax will be checked when file opens or saves
     property checkSyntax: Boolean read fBooleans[4] write fBooleans[4];
     // syntax errors will be published as diagnostics
@@ -222,6 +226,7 @@ begin
     fProgram:=Src.fProgram;;
     SymbolDatabase:=Src.SymbolDatabase;
     FPCOptions:=Src.fpcOptions;
+    ExcludeWorkspaceFolders:=Src.ExcludeWorkspaceFolders;
     CodeToolsConfig:=Src.CodeToolsConfig;
     MaximumCompletions:=Src.MaximumCompletions;
     OverloadPolicy:=Src.OverloadPolicy;
@@ -237,6 +242,12 @@ begin
   fFPCOptions.Assign(AValue);
 end;
 
+procedure TServerSettings.SetExcludeWorkspaceFolders(AValue: TStrings);
+begin
+  if fExcludeWorkspaceFolders=AValue then Exit;
+  fExcludeWorkspaceFolders.Assign(AValue);
+end;
+
 function TServerSettings.CanProvideWorkspaceSymbols: boolean;
 begin
   result := workspaceSymbols and 
@@ -249,6 +260,7 @@ begin
   inherited;
 
   fFPCOptions := TStringList.Create;
+  fExcludeWorkspaceFolders := TStringList.Create;
 
   // default settings
   symbolDatabase := '';
@@ -273,6 +285,7 @@ end;
 destructor TServerSettings.Destroy;
 begin
   FreeAndNil(fFPCOptions);
+  FreeAndNil(fExcludeWorkspaceFolders);
   inherited Destroy;
 end;
 

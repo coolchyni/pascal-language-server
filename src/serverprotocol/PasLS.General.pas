@@ -58,15 +58,16 @@ Type
   private
     function CheckProgramSetting: Boolean;
     procedure CollectWorkSpacePaths(WorkspaceFolders: TWorkspaceFolderItems;
-      aPaths: TStrings);
+      aPaths: TStrings; ExcludeFolders: TStrings);
     procedure DoLog(const Msg: String);
     procedure DoLog(const Fmt: String; const args: array of const);
     procedure DoLog(const Msg: String; aBool: Boolean);
     Function IsPasExt(Const aExtension : String) : Boolean;
+    function IsPathExcluded(const aPath: String; ExcludeFolders: TStrings): Boolean;
     procedure SetFPCPaths(Paths, Opts: TStrings; AsUnitPath, asIncludePath: Boolean);
     procedure SetPlatformDefaults(CodeToolsOptions : TCodeToolsOptions);
     procedure ApplyConfigSettings(CodeToolsOptions: TCodeToolsOptions);
-    procedure FindPascalSourceDirectories(RootPath: String; Results: TStrings);
+    procedure FindPascalSourceDirectories(RootPath: String; Results: TStrings; ExcludeFolders: TStrings);
     Procedure ShowConfigStatus(Params : TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
   Public
     function Process(var Params : TLSPInitializeParams): TInitializeResult; override;
@@ -191,20 +192,54 @@ begin
   Transport.SendDiagnostic(Msg+BoolToStr(aBool,'True','False'));
 end;
 
+function TInitialize.IsPathExcluded(const aPath: String; ExcludeFolders: TStrings): Boolean;
+var
+  ExcludePath: String;
+  NormalizedPath: String;
+  NormalizedExclude: String;
+begin
+  Result := False;
+  if (ExcludeFolders = nil) or (ExcludeFolders.Count = 0) then
+    Exit;
 
-procedure TInitialize.FindPascalSourceDirectories(RootPath: String; Results: TStrings);
+  NormalizedPath := ExcludeTrailingPathDelimiter(aPath);
+
+  for ExcludePath in ExcludeFolders do
+    begin
+      NormalizedExclude := ExcludeTrailingPathDelimiter(ExcludePath);
+      // Check if the path starts with the excluded path
+      if (Pos(NormalizedExclude, NormalizedPath) = 1) then
+        begin
+          Result := True;
+          Exit;
+        end;
+    end;
+end;
+
+
+procedure TInitialize.FindPascalSourceDirectories(RootPath: String; Results: TStrings; ExcludeFolders: TStrings);
 
 var
   Info : TSearchRec;
   havePas : Boolean;
+  SubDirPath: String;
 
 begin
+  // Skip this directory if it's excluded
+  if IsPathExcluded(RootPath, ExcludeFolders) then
+    Exit;
+
   havePas:=False;
   If FindFirst(RootPath+AllFilesMask,faAnyFile,Info)=0 then
     try
       Repeat
         if ((Info.Attr and faDirectory)<>0) and Not ((Info.Name='.') or (Info.Name='..')) then
-          FindPascalSourceDirectories(IncludeTrailingPathDelimiter(RootPath+Info.Name),Results);
+          begin
+            SubDirPath := IncludeTrailingPathDelimiter(RootPath+Info.Name);
+            // Only recurse if the subdirectory is not excluded
+            if not IsPathExcluded(SubDirPath, ExcludeFolders) then
+              FindPascalSourceDirectories(SubDirPath, Results, ExcludeFolders);
+          end;
         if IsPasExt(ExtractFileExt(Info.Name)) then
           HavePas:=True;
       until (FindNext(Info)<>0);
@@ -216,14 +251,14 @@ begin
       Results.Add(RootPath);
 end;
 
-procedure TInitialize.CollectWorkSpacePaths(WorkspaceFolders : TWorkspaceFolderItems; aPaths : TStrings);
+procedure TInitialize.CollectWorkSpacePaths(WorkspaceFolders : TWorkspaceFolderItems; aPaths : TStrings; ExcludeFolders: TStrings);
 
 Var
   Item: TCollectionItem;
 
 begin
   for Item in workspaceFolders do
-    FindPascalSourceDirectories(IncludeTrailingPathDelimiter(UriToPath(TWorkspaceFolder(Item).uri)), aPaths);
+    FindPascalSourceDirectories(IncludeTrailingPathDelimiter(UriToPath(TWorkspaceFolder(Item).uri)), aPaths, ExcludeFolders);
 end;
 
 
@@ -408,7 +443,7 @@ begin
     if ServerSettings.includeWorkspaceFoldersAsUnitPaths or
        ServerSettings.includeWorkspaceFoldersAsIncludePaths then
       begin
-        CollectWorkSpacePaths(Params.workspaceFolders,Paths);
+        CollectWorkSpacePaths(Params.workspaceFolders, Paths, ServerSettings.excludeWorkspaceFolders);
       end;
     // Add the in order specified
     Paths.Sorted:=False;
