@@ -392,6 +392,7 @@ function TSymbolExtractor.AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind; Name
 var
   CodePos,EndPos: TCodeXYPosition;
   FileName: String;
+  LineText: String;
 begin
   {$ifdef SYMBOL_DEBUG}
   writeln(IndentLevelString(IndentLevel + 1), '* ', Name);
@@ -399,7 +400,23 @@ begin
 
   Tool.CleanPosToCaret(Node.StartPos, CodePos);
   Tool.CleanPosToCaret(Node.EndPos,EndPos);
-  
+
+  // Fix for LSP Range specification: end position must be exclusive
+  // Move EndPos one position forward to make it exclusive
+  if (EndPos.Code <> nil) and (EndPos.Y > 0) and (EndPos.Y <= EndPos.Code.LineCount) then
+    begin
+      LineText := EndPos.Code.GetLine(EndPos.Y - 1, false);
+      // X is 1-based, so X <= Length means we're within the line
+      if EndPos.X <= Length(LineText) then
+        Inc(EndPos.X)
+      else
+        begin
+          // Move to next line if already past end of current line (use 1-based indexing)
+          Inc(EndPos.Y);
+          EndPos.X := 1;
+        end;
+    end;
+
   // clear existing symbols in symbol database
   // we don't know which include files are associated
   // with each unit so we need to check each time
@@ -413,7 +430,7 @@ begin
           RelatedFiles.Add(FileName, @CodePos);
         end;
     end;
-    
+
   Result := Entry.AddSymbol(Name, Kind, CodePos.Code.FileName, CodePos.Y, CodePos.X, EndPos.Y,EndPos.X);
 end;
 
