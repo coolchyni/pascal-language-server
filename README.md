@@ -102,13 +102,6 @@ minimalisticCompletions
 showSyntaxErrors
 ```
 
-### TODO:
-
- - Optional properties are not implemented so the JSON payloads are bloated.
- - `documentHighlight` should select the begin/end keywords only.
- - `textDocument/codeAction`
-- `DocumentSymbol`class for document symbols
-
 ## Clients
 
 ### Emacs
