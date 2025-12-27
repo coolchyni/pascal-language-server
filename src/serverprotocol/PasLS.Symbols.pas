@@ -108,6 +108,7 @@ type
     function FindOrCreateClass(const AClassName: String; Node: TCodeTreeNode; IsImplementationContainer: Boolean = False): TDocumentSymbolEx;
     procedure SetNodeRange(Symbol: TDocumentSymbolEx; Node: TCodeTreeNode);
     function GetCurrentContainer: TDocumentSymbolExItems;
+    function AddFlatSymbol(Node: TCodeTreeNode; const Name: String; Kind: TSymbolKind): TSymbol;
   public
     constructor Create(AEntry: TSymbolTableEntry; ATool: TCodeTool; AMode: TSymbolMode);
     destructor Destroy; override;
@@ -362,6 +363,22 @@ begin
     Result := FRootSymbols;
 end;
 
+function TSymbolBuilder.AddFlatSymbol(Node: TCodeTreeNode; const Name: String; Kind: TSymbolKind): TSymbol;
+var
+  CodePos, EndPos: TCodeXYPosition;
+begin
+  Result := nil;
+  if (FTool <> nil) and (Node <> nil) then
+    begin
+      FTool.CleanPosToCaret(Node.StartPos, CodePos);
+      FTool.CleanPosToCaret(Node.EndPos, EndPos);
+      Result := FEntry.AddSymbol(Name, Kind,
+                                 CodePos.Code.FileName,
+                                 CodePos.Y, CodePos.X,
+                                 EndPos.Y, EndPos.X);
+    end;
+end;
+
 procedure TSymbolBuilder.BeginInterfaceSection(Node: TCodeTreeNode);
 begin
   if FMode <> smHierarchical then
@@ -462,7 +479,7 @@ begin
         // - Interface section: class declaration
         // - Implementation section: class with method implementations (rare)
         FCurrentClass := FindOrCreateClass(Name, Node);
-        Result := nil; // Hierarchical classes are not TSymbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Class);
       end;
   end;
 end;
@@ -534,7 +551,10 @@ begin
                   end;
               end;
           end;
-        Result := nil; // Hierarchical symbols are not TSymbol
+
+        Result := AddFlatSymbol(Node, AMethodName, TSymbolKind._Function);
+        if Result <> nil then
+          Result.containerName := AClassName;
       end;
   end;
 end;
@@ -568,7 +588,7 @@ begin
         GlobalSymbol.kind := TSymbolKind._Function;
         SetNodeRange(GlobalSymbol, Node);
         FLastAddedFunction := GlobalSymbol;
-        Result := nil; // Hierarchical symbols are not TSymbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Function);
       end;
   end;
 end;
@@ -601,7 +621,7 @@ begin
         StructSymbol.name := Name;
         StructSymbol.kind := TSymbolKind._Struct;
         SetNodeRange(StructSymbol, Node);
-        Result := nil; // Hierarchical symbols are not TSymbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Struct);
       end;
   end;
 end;
@@ -619,11 +639,16 @@ begin
   Result.name := Name;
   Result.kind := TSymbolKind._Function;
   SetNodeRange(Result, Node);
+  AddFlatSymbol(Node, Name, TSymbolKind._Function);
 end;
 
 procedure TSymbolBuilder.SerializeSymbols;
+const
+  BATCH_COUNT = 1000;
 var
   SerializedItems: TJSONArray;
+  i, Start, Next, Total: Integer;
+  Symbol: TSymbol;
 begin
   case FMode of
     smFlat:
@@ -634,10 +659,39 @@ begin
 
     smHierarchical:
       begin
-        // Serialize DocumentSymbol hierarchy
+        // Serialize DocumentSymbol hierarchy for textDocument/documentSymbol
         SerializedItems := specialize TLSPStreaming<TDocumentSymbolExItems>.ToJSON(FRootSymbols) as TJSONArray;
         try
           FEntry.fRawJSON := SerializedItems.AsJSON;
+        finally
+          SerializedItems.Free;
+        end;
+
+        // Serialize flat SymbolInformation[] for database insertion
+        SerializedItems := specialize TLSPStreaming<TSymbolItems>.ToJSON(FEntry.Symbols) as TJSONArray;
+        try
+          // Set RawJSON for each symbol (needed for database insertion)
+          for i := 0 to SerializedItems.Count - 1 do
+            begin
+              Symbol := FEntry.Symbols.Items[i];
+              Symbol.RawJSON := SerializedItems[i].AsJson;
+            end;
+
+          // Insert symbols into database if available
+          if SymbolManager.Database <> nil then
+            begin
+              Next := 0;
+              Start := 0;
+              Total := SerializedItems.Count;
+              while Start < Total do
+                begin
+                  Next := Start + BATCH_COUNT;
+                  if Next >= Total then
+                    Next := Total - 1;
+                  SymbolManager.Database.InsertSymbols(FEntry.Symbols, Start, Next);
+                  Start := Next + 1;
+                end;
+            end;
         finally
           SerializedItems.Free;
         end;

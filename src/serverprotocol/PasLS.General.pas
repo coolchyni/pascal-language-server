@@ -435,6 +435,7 @@ begin
     if ServerSettings.documentSymbols or ServerSettings.workspaceSymbols then
       begin
       SymbolManager := TSymbolManager.Create;
+      SymbolManager.Transport := Transport;
       Result.capabilities.documentSymbolProvider:=True;
       Result.capabilities.workspaceSymbolProvider := ServerSettings.CanProvideWorkspaceSymbols;
       end;
