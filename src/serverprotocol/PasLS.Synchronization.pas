@@ -24,7 +24,7 @@ unit PasLS.Synchronization;
 interface
 
 uses
-  Classes, DateUtils,
+  Classes, SysUtils, DateUtils,
   CodeToolManager, CodeCache,
   LSP.BaseTypes, LSP.Base, LSP.Basic, PasLS.Symbols, LSP.Synchronization;
 
@@ -100,14 +100,17 @@ end;
 { TDidCloseTextDocument }
 
 procedure TDidCloseTextDocument.Process(var Params : TDidCloseTextDocumentParams);
-
-
-begin with Params do
+var
+  FileName: String;
+begin
+  with Params do
   begin
-    // URI := ParseURI(textDocument.uri);
-    // TODO: clear errors
-    // TODO: if the file was manually loaded (i.e. not in search paths)
-    // then we may want to remove it from the symbol table so it doesn't cause clutter
+    // Clean up symbol table entry and database records when file is closed
+    if SymbolManager <> nil then
+    begin
+      FileName := ExtractFileName(textDocument.LocalPath);
+      SymbolManager.RemoveFile(FileName);
+    end;
   end;
 end;
 
@@ -133,13 +136,12 @@ end;
 
 procedure TDidOpenTextDocument.Process(var Params : TDidOpenTextDocumentParams);
 var
-
   Path: String;
   Code: TCodeBuffer;
-begin with Params do
+begin
+  with Params do
   begin
     Path := textDocument.LocalPath;
-
     Code := CodeToolBoss.FindFile(Path);
     if Code <> nil then
       Code.Source := textDocument.text;
@@ -148,12 +150,10 @@ begin with Params do
     // it need to be loaded from disk
     if Code = nil then
       Code := CodeToolBoss.LoadFile(Path, False, False);
-      
-    DiagnosticsHandler.CheckSyntax(Transport,Code);
 
+    DiagnosticsHandler.CheckSyntax(Transport, Code);
     CheckInactiveRegions(Transport, Code, textDocument.uri);
-    //if SymbolManager <> nil then
-    //  SymbolManager.FileModified(Code);
+
     if SymbolManager <> nil then
       SymbolManager.Reload(Code, True);
   end;
