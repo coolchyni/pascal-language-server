@@ -1097,6 +1097,14 @@ begin
       case Node.Desc of
         ctnClass,ctnClassHelper,ctnRecordHelper,ctnTypeHelper:
           begin
+            // Skip forward declarations (e.g., "TMyClass = class;")
+            // Use ctnsForwardDeclaration flag, not FirstChild check
+            // (empty class "TMyClass = class end;" has no children but is NOT forward)
+            if (Node.SubDesc and ctnsForwardDeclaration) > 0 then
+              begin
+                Node := Node.NextBrother;
+                continue;
+              end;
             TypeName := CleanTypeName(GetIdentifierAtPos(Tool, TypeDefNode.StartPos, true, true));
             Builder.AddClass(TypeDefNode, TypeName);
             Inc(IndentLevel);

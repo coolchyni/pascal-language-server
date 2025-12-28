@@ -25,6 +25,7 @@ type
   published
     procedure TestSymbolExtractionHierarchical;
     procedure TestSymbolExtractionFlat;
+    procedure TestForwardDeclarationSkipped;
   end;
 
 implementation
@@ -63,11 +64,62 @@ const
     '' + LineEnding +
     'end.';
 
+  // Test case for forward declarations - should be skipped in symbol extraction
+  TEST_UNIT_WITH_FORWARD_DECLARATION =
+    'unit TestForward;' + LineEnding +
+    '' + LineEnding +
+    '{$mode objfpc}{$H+}' + LineEnding +
+    '' + LineEnding +
+    'interface' + LineEnding +
+    '' + LineEnding +
+    'type' + LineEnding +
+    '  // Forward class declaration - should be SKIPPED' + LineEnding +
+    '  TMySymbol = class;' + LineEnding +
+    '' + LineEnding +
+    '  // Helper class using the forward declared class' + LineEnding +
+    '  TSymbolHelper = class' + LineEnding +
+    '  private' + LineEnding +
+    '    FItem: TMySymbol;' + LineEnding +
+    '  public' + LineEnding +
+    '    procedure DoSomething;' + LineEnding +
+    '  end;' + LineEnding +
+    '' + LineEnding +
+    '  // Full class declaration - should be INCLUDED' + LineEnding +
+    '  TMySymbol = class' + LineEnding +
+    '  private' + LineEnding +
+    '    FName: String;' + LineEnding +
+    '    FKind: Integer;' + LineEnding +
+    '  public' + LineEnding +
+    '    property Name: String read FName write FName;' + LineEnding +
+    '    property Kind: Integer read FKind write FKind;' + LineEnding +
+    '    procedure Initialize;' + LineEnding +
+    '  end;' + LineEnding +
+    '' + LineEnding +
+    'implementation' + LineEnding +
+    '' + LineEnding +
+    '{ TSymbolHelper }' + LineEnding +
+    '' + LineEnding +
+    'procedure TSymbolHelper.DoSomething;' + LineEnding +
+    'begin' + LineEnding +
+    '  FItem := nil;' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    '{ TMySymbol }' + LineEnding +
+    '' + LineEnding +
+    'procedure TMySymbol.Initialize;' + LineEnding +
+    'begin' + LineEnding +
+    '  FName := '''';' + LineEnding +
+    '  FKind := 0;' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    'end.';
+
 { TTestDocumentSymbol }
 
 procedure TTestDocumentSymbol.CreateTestFile(const AContent: String);
 var
   F: TextFile;
+  ExistingBuffer: TCodeBuffer;
 begin
   FTestFile := GetTempFileName('', 'testunit');
   FTestFile := ChangeFileExt(FTestFile, '.pas');
@@ -79,6 +131,13 @@ begin
   finally
     CloseFile(F);
   end;
+
+  // Force CodeToolBoss to reload from disk if buffer already exists
+  // This is necessary because GetTempFileName may reuse same filename
+  // after previous test deleted the file
+  ExistingBuffer := CodeToolBoss.FindFile(FTestFile);
+  if ExistingBuffer <> nil then
+    ExistingBuffer.Revert;
 end;
 
 procedure TTestDocumentSymbol.CleanupTestFile;
@@ -194,6 +253,48 @@ begin
   AssertTrue('Should have Field kind (8)', Pos('"kind" : 8', RawJSON) > 0);
   AssertTrue('Should have Property kind (7)', Pos('"kind" : 7', RawJSON) > 0);
   AssertTrue('Should have Function/Method kind (12)', Pos('"kind" : 12', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestForwardDeclarationSkipped;
+var
+  RawJSON: String;
+begin
+  // Test forward declarations are skipped
+  // Forward declaration "TMySymbol = class;" at line 8 should NOT appear
+  // Full declaration "TMySymbol = class" at line 19 SHOULD appear
+
+  SetClientCapabilities(True);  // hierarchical mode
+
+  // Create test file with forward declarations
+  CreateTestFile(TEST_UNIT_WITH_FORWARD_DECLARATION);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Forward declaration is at line 8 (0-indexed)
+  // If forward declaration was NOT skipped, we'd see "line" : 8 for TMySymbol
+  // Check that line 8 does NOT appear in the JSON (no symbol starts at that line)
+  AssertTrue('Forward declaration at line 8 should be skipped',
+    Pos('"start" : { "character" : 2, "line" : 8', RawJSON) = 0);
+
+  // Full declaration is at line 19, should appear
+  AssertTrue('Full declaration at line 19 should be present',
+    Pos('"start" : { "character" : 2, "line" : 19', RawJSON) > 0);
+
+  // Verify child members exist (proves full declaration was extracted, not forward)
+  AssertTrue('Should contain FName field', Pos('FName', RawJSON) > 0);
+  AssertTrue('Should contain FKind field', Pos('FKind', RawJSON) > 0);
+  AssertTrue('Should contain Name property', Pos('"Name"', RawJSON) > 0);
 end;
 
 initialization
