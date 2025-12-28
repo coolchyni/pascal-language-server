@@ -111,37 +111,8 @@ To use the server from `lsp-mode` in Emacs, install the separate
 
 ### Sublime Text
 
-Example settings JSON for the [LSP](https://github.com/sublimelsp/LSP) package on macOS.
-
-```json
-"pascal-language-server":
-{
-  "command":
-  [
-    "/pascal-language-server/lib/x86_64-darwin/pasls"
-  ],
-  "env":
-  {
-    "FPCDIR": "/usr/local/share/fpcsrc",
-    "FPCTARGET": "darwin",
-    "FPCTARGETCPU": "x86_64",
-    "LAZARUSDIR": "/usr/share/lazarus",
-    "PP": "/usr/local/lib/fpc/3.0.4/ppcx64"
-  },
-  "initializationOptions": {
-    // global options which apply to all projects
-  },
-  "languageId": "pascal",
-  "scopes":
-  [
-    "source.pascal"
-  ],
-  "syntaxes":
-  [
-    "Packages/FPC/FPC.sublime-syntax"
-  ]
-}
-```
+Install the [package](
+https://github.com/genericptr/pasls-sublime-text) and configure the settings accordingly. Requires the [LSP](https://github.com/sublimelsp/LSP) package.
 
 ### Visual Studio Code
 
