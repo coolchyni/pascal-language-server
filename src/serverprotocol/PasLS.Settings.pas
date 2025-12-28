@@ -99,13 +99,13 @@ type
     property config: String read fConfig write fConfig;
     // Check inactive regions
     property checkInactiveRegions : Boolean read fBooleans[11] write fBooleans[11];
-
-    function CanProvideWorkspaceSymbols: boolean;
   public
     constructor Create; override;
     Destructor Destroy; override;
     procedure ReplaceMacros(Macros: TMacroMap);
     Procedure Assign(aSource : TPersistent); override;
+    function CanProvideWorkspaceSymbols: boolean;
+    class function GetPropertyDescription(const PropName: String): String;
   end;
 
 
@@ -250,9 +250,37 @@ end;
 
 function TServerSettings.CanProvideWorkspaceSymbols: boolean;
 begin
-  result := workspaceSymbols and 
-            (symbolDatabase <> '') and 
+  result := workspaceSymbols and
+            (symbolDatabase <> '') and
             FileExists(ExpandFileName(symbolDatabase));
+end;
+
+class function TServerSettings.GetPropertyDescription(const PropName: String): String;
+begin
+  case PropName of
+    'program': Result := 'Path to the main program file for resolving references';
+    'symbolDatabase': Result := 'Path to SQLite3 database for symbols';
+    'fpcOptions': Result := 'FPC compiler options (passed to Code Tools)';
+    'codeToolsConfig': Result := 'Optional codetools.config file to load settings from';
+    'maximumCompletions': Result := 'Maximum number of completion items to be returned';
+    'overloadPolicy': Result := 'Policy which determines how overloaded document symbols are displayed';
+    'insertCompletionsAsSnippets': Result := 'Procedure completions with parameters are inserted as snippets';
+    'insertCompletionProcedureBrackets': Result := 'Procedure completions with parameters insert empty brackets';
+    'includeWorkspaceFoldersAsUnitPaths': Result := 'Workspace folders will be added to unit paths (i.e. -Fu)';
+    'includeWorkspaceFoldersAsIncludePaths': Result := 'Workspace folders will be added to include paths (i.e. -Fi)';
+    'excludeWorkspaceFolders': Result := 'Workspace folder paths to exclude from workspace path collection';
+    'checkSyntax': Result := 'Syntax will be checked when file opens or saves';
+    'publishDiagnostics': Result := 'Syntax errors will be published as diagnostics';
+    'workspaceSymbols': Result := 'Enable workspace symbols';
+    'documentSymbols': Result := 'Enable document symbols';
+    'minimalisticCompletions': Result := 'Completions contain a minimal amount of extra information';
+    'showSyntaxErrors': Result := 'Syntax errors as shown in the UI with ''window/showMessage''';
+    'ignoreTextCompletions': Result := 'Ignores completion items like "begin" and "var"';
+    'config': Result := 'Config file or directory to read settings from';
+    'checkInactiveRegions': Result := 'Check inactive regions';
+    else
+      Result := '';
+  end;
 end;
 
 constructor TServerSettings.Create;

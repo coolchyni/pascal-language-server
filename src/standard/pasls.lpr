@@ -25,7 +25,7 @@ program pasls;
 uses
   { RTL }
 
-  SysUtils, Classes, FPJson, JSONParser, JSONScanner,
+  SysUtils, Classes, FPJson, JSONParser, JSONScanner, TypInfo,
   { Protocol }
   PasLS.AllCommands, PasLS.Settings,
   LSP.Base, LSP.Basic, PasLS.TextLoop, PasLS.LSConfig;
@@ -84,6 +84,74 @@ begin
     end;
 end;
 
+Procedure PrintInitializationOptions;
+var
+  Settings: TServerSettings;
+  PropList: PPropList;
+  PropCount, I: Integer;
+  PropInfo: PPropInfo;
+  PropName, TypeName, DefaultValue, Description: String;
+begin
+  Settings := TServerSettings.Create;
+  try
+    PropCount := GetPropList(Settings, PropList);
+    try
+      writeln('Initialization Options:');
+      for I := 0 to PropCount - 1 do
+        begin
+          PropInfo := PropList^[I];
+          PropName := PropInfo^.Name;
+          Description := TServerSettings.GetPropertyDescription(PropName);
+
+          // Get property type name
+          case PropInfo^.PropType^.Kind of
+            tkInteger: TypeName := 'integer';
+            tkBool: TypeName := 'boolean';
+            tkAString, tkLString, tkUString: TypeName := 'string';
+            tkClass:
+              if PropInfo^.PropType^.Name = 'TStrings' then
+                TypeName := 'array'
+              else
+                TypeName := PropInfo^.PropType^.Name;
+            tkEnumeration: TypeName := 'enumeration';
+            else
+              TypeName := '';
+          end;
+
+          // Get default value
+          DefaultValue := '';
+          case PropInfo^.PropType^.Kind of
+            tkInteger:
+              DefaultValue := IntToStr(GetOrdProp(Settings, PropInfo));
+            tkBool:
+              DefaultValue := BoolToStr(GetOrdProp(Settings, PropInfo) <> 0, 'true', 'false');
+            tkAString, tkLString, tkUString:
+              begin
+                DefaultValue := GetStrProp(Settings, PropInfo);
+                if DefaultValue <> '' then
+                  DefaultValue := '"' + DefaultValue + '"';
+              end;
+            tkEnumeration:
+              DefaultValue := IntToStr(GetOrdProp(Settings, PropInfo));
+          end;
+
+          // Format output
+          write('  ▶ ', PropName);
+          if Description <> '' then
+            write(': ', Description);
+          write(' (', TypeName);
+          if DefaultValue <> '' then
+            write(', default: ', DefaultValue);
+          writeln(')');
+        end;
+    finally
+      FreeMem(PropList);
+    end;
+  finally
+    Settings.Free;
+  end;
+end;
+
 var
   aTransport: TLSPTextTransport;
   aContext: TLSPLogContext;
@@ -103,6 +171,17 @@ begin
   if ParamStr(1) = '-h' then
     begin
     writeln('Pascal Language Server [',{$INCLUDE %DATE%},']');
+    writeln;
+    writeln('Environment Variables:');
+    writeln('  PP           - Path to Free Pascal compiler executable');
+    writeln('  FPCDIR       - Path to FPC source directory');
+    writeln('  LAZARUSDIR   - Path to Lazarus source directory');
+    writeln('  FPCTARGET    - Target OS (e.g., darwin, linux, win64)');
+    writeln('  FPCTARGETCPU - Target CPU (e.g., x86_64, aarch64)');
+    writeln;
+    PrintInitializationOptions;
+    writeln;
+    writeln('For more information: https://github.com/genericptr/pascal-language-server');
     Halt;
     end;
   aContext := nil;
