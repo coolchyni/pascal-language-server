@@ -148,8 +148,7 @@ type
     fDatabase: TSymbolDatabase;
 
     function Load(Path: String): TCodeBuffer;
-    procedure RemoveFile(FileName: String);
-    procedure AddError(Message: String); 
+    procedure AddError(Message: String);
     function GetEntry(Code: TCodeBuffer): TSymbolTableEntry;
     function GetDatabase: TSymbolDatabase;
     procedure setTransport(AValue: TMessageTransport);
@@ -176,6 +175,10 @@ type
     procedure Reload(Path: String; Always: Boolean = false); overload;
     procedure Scan(Path: String; SearchSubDirs: Boolean);
     procedure FileModified(Code: TCodeBuffer);
+
+    { File Management }
+    procedure RemoveFile(FileName: String);
+
     Property Transport : TMessageTransport Read fTransport Write setTransport;
   end;
 
@@ -341,7 +344,7 @@ procedure TSymbolTableEntry.Clear;
 begin
   Modified := false;
   Symbols.Clear;
-  if SymbolManager.Database <> nil then
+  if (SymbolManager.Database <> nil) and (Code <> nil) then
     SymbolManager.Database.ClearSymbols(Code.FileName);
 end;
 
@@ -1005,10 +1008,20 @@ end;
 procedure TSymbolManager.RemoveFile(FileName: String);
 var
   Index: integer;
+  Entry: TSymbolTableEntry;
 begin
-  Index := SymbolTable.FindIndexOf(FileName);
-  if Index <> -1 then
-    SymbolTable.Delete(Index);
+  Entry := TSymbolTableEntry(SymbolTable.Find(FileName));
+  if Entry <> nil then
+  begin
+    // Clear symbols from database if enabled
+    if (Database <> nil) and (Entry.Code <> nil) then
+      Database.ClearSymbols(Entry.Code.FileName);
+
+    // Remove entry from in-memory symbol table
+    Index := SymbolTable.FindIndexOf(FileName);
+    if Index <> -1 then
+      SymbolTable.Delete(Index);
+  end;
 end;
 
 function TSymbolManager.FindWorkspaceSymbols(Query: String): TJSONSerializedArray;
@@ -1164,6 +1177,13 @@ begin
     begin
       Entry := TSymbolTableEntry.Create(Code);
       SymbolTable.Add(Key, Entry);
+    end
+  else if Entry.Code <> Code then
+    begin
+      // Update Entry.Code to point to the new buffer
+      // This handles the case when a file is moved/renamed:
+      // the filename (key) is the same but the Code buffer is different
+      Entry.Code := Code;
     end;
   result := Entry;
 end;
