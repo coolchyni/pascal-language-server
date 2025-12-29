@@ -9,24 +9,9 @@ Lazarus as backend.
 
 ## Features
 
-The implementation is still incomplete.
+To see the full list of implemented server capabilities in the current version use the command:
 
-### Implemented Methods
-
- - textDocument
-   - declaration
-   - implementation
-   - references
-   -  signatureHelp
-   - documentSymbol (only `SymbolInformation`)
-   - documentHighlight
-   - completion
- - window
-   - showMessage
- - workspace
-   - symbol
-   - executeCommand
-- diagnostics (incomplete)
+  `pasls -h`
 
 ### Extra commands to be executed with **executeCommand**:
 

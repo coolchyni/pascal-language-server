@@ -27,8 +27,9 @@ uses
 
   SysUtils, Classes, FPJson, JSONParser, JSONScanner, TypInfo,
   { Protocol }
-  PasLS.AllCommands, PasLS.Settings,
-  LSP.Base, LSP.Basic, PasLS.TextLoop, PasLS.LSConfig;
+  PasLS.AllCommands, PasLS.Settings, PasLS.Commands,
+  LSP.Base, LSP.Basic, LSP.Capabilities, LSP.Options,
+  PasLS.TextLoop, PasLS.LSConfig, PasLS.General;
 
 Type
 
@@ -84,6 +85,9 @@ begin
     end;
 end;
 
+const
+  kHelpPrefix = '  ▶ ';
+
 Procedure PrintInitializationOptions;
 var
   Settings: TServerSettings;
@@ -136,7 +140,7 @@ begin
           end;
 
           // Format output
-          write('  ▶ ', PropName);
+          write(kHelpPrefix, '', PropName);
           if Description <> '' then
             write(': ', Description);
           write(' (', TypeName);
@@ -148,6 +152,126 @@ begin
       FreeMem(PropList);
     end;
   finally
+    Settings.Free;
+  end;
+end;
+
+Procedure PrintServerCapabilities;
+var
+  Capabilities: TServerCapabilities;
+  Settings: TServerSettings;
+  Commands: TStringList;
+  PropList: PPropList;
+  PropCount, I, J: Integer;
+  PropInfo: PPropInfo;
+  PropName: String;
+  PropObj: TObject;
+  CompletionOpts: TCompletionOptions;
+  SignatureOpts: TSignatureHelpOptions;
+begin
+  Settings := TServerSettings.Create;
+  Capabilities := TServerCapabilities.Create;
+  try
+    // Apply settings to capabilities (mimics initialization)
+    Capabilities.ApplySettings(Settings);
+
+    writeln('Server Capabilities:');
+
+    // Iterate through published properties using RTTI
+    PropCount := GetPropList(Capabilities, PropList);
+    try
+      for I := 0 to PropCount - 1 do
+        begin
+          PropInfo := PropList^[I];
+          PropName := PropInfo^.Name;
+
+          case PropInfo^.PropType^.Kind of
+            tkBool:
+              begin
+                // Show boolean capabilities if enabled
+                if GetOrdProp(Capabilities, PropInfo) <> 0 then
+                  begin
+                    write(kHelpPrefix, PropName);
+                    if TServerCapabilities.GetPropertyDescription(PropName) <> '' then
+                      write(': ', TServerCapabilities.GetPropertyDescription(PropName));
+                    writeln;
+                  end;
+              end;
+            tkClass:
+              begin
+                PropObj := TObject(GetObjectProp(Capabilities, PropInfo));
+                if Assigned(PropObj) then
+                  begin
+                    write(kHelpPrefix, PropName);
+                    if TServerCapabilities.GetPropertyDescription(PropName) <> '' then
+                      write(': ', TServerCapabilities.GetPropertyDescription(PropName));
+
+                    // Special handling for completion provider
+                    if PropObj is TCompletionOptions then
+                      begin
+                        CompletionOpts := TCompletionOptions(PropObj);
+                        if Assigned(CompletionOpts.triggerCharacters) and
+                           (CompletionOpts.triggerCharacters.Count > 0) then
+                          begin
+                            write(' (triggers: ');
+                            for J := 0 to CompletionOpts.triggerCharacters.Count - 1 do
+                              begin
+                                write('''', CompletionOpts.triggerCharacters[J], '''');
+                                if J < CompletionOpts.triggerCharacters.Count - 1 then
+                                  write(', ');
+                              end;
+                            write(')');
+                          end;
+                        writeln;
+                      end
+                    // Special handling for signature help provider
+                    else if PropObj is TSignatureHelpOptions then
+                      begin
+                        SignatureOpts := TSignatureHelpOptions(PropObj);
+                        if Assigned(SignatureOpts.triggerCharacters) and
+                           (SignatureOpts.triggerCharacters.Count > 0) then
+                          begin
+                            write(' (triggers: ');
+                            for J := 0 to SignatureOpts.triggerCharacters.Count - 1 do
+                              begin
+                                write('''', SignatureOpts.triggerCharacters[J], '''');
+                                if J < SignatureOpts.triggerCharacters.Count - 1 then
+                                  write(', ');
+                              end;
+                            write(')');
+                          end;
+                        writeln;
+                      end
+                    else
+                      writeln;
+                  end;
+              end;
+          end;
+        end;
+
+      // Show execute commands separately
+      Commands := TStringList.Create;
+      try
+        CommandFactory.GetCommandList(Commands);
+        if Commands.Count > 0 then
+          begin
+            write(kHelpPrefix, 'executeCommandProvider (commands: ');
+            for I := 0 to Commands.Count - 1 do
+              begin
+                write(Commands[I]);
+                if I < Commands.Count - 1 then
+                  write(', ');
+              end;
+            writeln(')');
+          end;
+      finally
+        Commands.Free;
+      end;
+    finally
+      FreeMem(PropList);
+    end;
+  finally
+    Capabilities.Free;
     Settings.Free;
   end;
 end;
@@ -173,13 +297,15 @@ begin
     writeln('Pascal Language Server [',{$INCLUDE %DATE%},']');
     writeln;
     writeln('Environment Variables:');
-    writeln('  PP           - Path to Free Pascal compiler executable');
-    writeln('  FPCDIR       - Path to FPC source directory');
-    writeln('  LAZARUSDIR   - Path to Lazarus source directory');
-    writeln('  FPCTARGET    - Target OS (e.g., darwin, linux, win64)');
-    writeln('  FPCTARGETCPU - Target CPU (e.g., x86_64, aarch64)');
+    writeln(kHelpPrefix, 'PP: Path to Free Pascal compiler executable');
+    writeln(kHelpPrefix, 'FPCDIR: Path to FPC source directory');
+    writeln(kHelpPrefix, 'LAZARUSDIR: Path to Lazarus source directory');
+    writeln(kHelpPrefix, 'FPCTARGET: Target OS (e.g., darwin, linux, win64)');
+    writeln(kHelpPrefix, 'FPCTARGETCPU: Target CPU (e.g., x86_64, aarch64)');
     writeln;
     PrintInitializationOptions;
+    writeln;
+    PrintServerCapabilities;
     writeln;
     writeln('For more information: https://github.com/genericptr/pascal-language-server');
     Halt;

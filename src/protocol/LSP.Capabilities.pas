@@ -139,6 +139,7 @@ type
     constructor Create; override;
     destructor destroy; override;
     Procedure Assign(Source : TPersistent); override;
+    class function GetPropertyDescription(const PropName: String): String;
   published
     property textDocumentSync: TTextDocumentSyncOptions read fTextDocumentSync write SetTextDocumentSync;
     property workspace: TWorkspaceServerCapabilities read fWorkspace write SetWorkspace;
@@ -369,6 +370,29 @@ begin
     end
   else
     inherited Assign(Source);
+end;
+
+class function TServerCapabilities.GetPropertyDescription(const PropName: String): String;
+begin
+  case PropName of
+    'textDocumentSync': Result := 'Document synchronization mode';
+    'workspace': Result := 'Workspace capabilities';
+    'completionProvider': Result := 'Code completion support';
+    'hoverProvider': Result := 'Hover information support';
+    'definitionProvider': Result := 'Go to definition support';
+    'declarationProvider': Result := 'Go to declaration support';
+    'referencesProvider': Result := 'Find all references support';
+    'implementationProvider': Result := 'Go to implementation support';
+    'codeActionProvider': Result := 'Code action support';
+    'documentHighlightProvider': Result := 'Document highlight support';
+    'documentSymbolProvider': Result := 'Document symbols support';
+    'workspaceSymbolProvider': Result := 'Workspace symbols support';
+    'signatureHelpProvider': Result := 'Signature help support';
+    'executeCommandProvider': Result := 'Execute command support';
+    'inlayHintProvider': Result := 'Inlay hints support';
+    else
+      Result := '';
+  end;
 end;
 
 end.
