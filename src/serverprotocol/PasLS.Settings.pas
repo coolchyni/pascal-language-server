@@ -47,6 +47,7 @@ type
     fBooleans: array[0..32] of Boolean;
     fProgram: String;
     fSymbolDatabase: String;
+    fSymbolMode: String;
     fFPCOptions: TStrings;
     fExcludeWorkspaceFolders: TStrings;
     fCodeToolsConfig: String;
@@ -61,6 +62,9 @@ type
     property &program: String read fProgram write fProgram;
     // Path to SQLite3 database for symbols
     property symbolDatabase: String read fSymbolDatabase write fSymbolDatabase;
+    // Symbol mode: "flat", "hierarchical", or "auto" (default, based on client capability)
+    // For backward compatibility: "symbolInformation" maps to "flat", "documentSymbol" maps to "hierarchical"
+    property symbolMode: String read fSymbolMode write fSymbolMode;
     // FPC compiler options (passed to Code Tools)
     property fpcOptions: TStrings read fFPCOptions write SetFPCOptions;
     // Optional codetools.config file to load settings from
@@ -225,6 +229,7 @@ begin
     fBooleans:=Src.FBooleans;
     fProgram:=Src.fProgram;;
     SymbolDatabase:=Src.SymbolDatabase;
+    SymbolMode:=Src.SymbolMode;
     FPCOptions:=Src.fpcOptions;
     ExcludeWorkspaceFolders:=Src.ExcludeWorkspaceFolders;
     CodeToolsConfig:=Src.CodeToolsConfig;
@@ -260,6 +265,7 @@ begin
   case PropName of
     'program': Result := 'Path to the main program file for resolving references';
     'symbolDatabase': Result := 'Path to SQLite3 database for symbols';
+    'symbolMode': Result := 'Symbol mode: "flat", "hierarchical", or "auto" (default)';
     'fpcOptions': Result := 'FPC compiler options (passed to Code Tools)';
     'codeToolsConfig': Result := 'Optional codetools.config file to load settings from';
     'maximumCompletions': Result := 'Maximum number of completion items to be returned';

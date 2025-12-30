@@ -118,7 +118,7 @@ type
     fKind: TSymbolKind;
     fDeprecated: TOptionalBoolean;
     fLocation: TLocation;
-    fContainerName: string;
+    fContainerName: TOptionalString;
     procedure SetLocation(AValue: TLocation);
   Public
     constructor Create(ACollection: TCollection); override;
@@ -145,7 +145,7 @@ type
     // user interface purposes (e.g. to render a qualifier in the user interface
     // if necessary). It can't be used to re-infer a hierarchy for the document
     // symbols.
-    property containerName: string read fContainerName write fContainerName;
+    property containerName: TOptionalString read fContainerName write fContainerName;
   end;
 
   TSymbolInformationItems = specialize TGenericCollection<TSymbolInformation>;
@@ -330,6 +330,7 @@ destructor TSymbolInformation.Destroy;
 begin
   FreeAndNil(fLocation);
   FreeAndNil(fDeprecated);
+  FreeAndNil(fContainerName);
   inherited Destroy;
 end;
 
@@ -351,7 +352,15 @@ begin
       else
         FreeAndNil(fDeprecated);
       Location:=Src.Location;
-      ContainerName:=Src.ContainerName;
+      if Assigned(Src.containerName) then
+        begin
+          if not assigned(fContainerName) then
+            fContainerName:=TOptionalString.Create(Src.containerName.Value)
+          else
+            fContainerName.Value:=Src.containerName.Value;
+        end
+      else
+        FreeAndNil(fContainerName);
     end
   else
     inherited Assign(Source);

@@ -270,6 +270,7 @@ begin
 
   DoLog( kStatusPrefix+'FPCPath: ' + CodeToolsOptions.FPCPath);
   DoLog( kStatusPrefix+'FPCSrcDir: ' + CodeToolsOptions.FPCSrcDir);
+  DoLog( kStatusPrefix+'LazarusSrcDir: ' + CodeToolsOptions.LazarusSrcDir);
   DoLog( kStatusPrefix+'TargetOS: ' + CodeToolsOptions.TargetOS);
   DoLog( kStatusPrefix+'TargetProcessor: '+ CodeToolsOptions.TargetProcessor);
 
@@ -305,6 +306,10 @@ begin
   DoLog('  ► publishDiagnostics: ', ServerSettings.publishDiagnostics);
   DoLog('  ► workspaceSymbols: ', ServerSettings.workspaceSymbols);
   DoLog('  ► documentSymbols: ', ServerSettings.documentSymbols);
+  if ServerSettings.symbolMode <> '' then
+    DoLog('  ► symbolMode: %s', [ServerSettings.symbolMode])
+  else
+    DoLog('  ► symbolMode: auto');
   DoLog('  ► minimalisticCompletions: ', ServerSettings.minimalisticCompletions);
   DoLog('  ► showSyntaxErrors: ', ServerSettings.showSyntaxErrors);
 end;
