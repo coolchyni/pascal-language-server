@@ -47,24 +47,24 @@ type
     fBooleans: array[0..32] of Boolean;
     fProgram: String;
     fSymbolDatabase: String;
-    fSymbolMode: String;
     fFPCOptions: TStrings;
     fExcludeWorkspaceFolders: TStrings;
     fCodeToolsConfig: String;
     fMaximumCompletions: Integer;
     fOverloadPolicy: TOverloadPolicy;
     fConfig: String;
+    fClientProfileEnableFeatures: TStrings;
+    fClientProfileDisableFeatures: TStrings;
     procedure SetFPCOptions(AValue: TStrings);
     procedure SetExcludeWorkspaceFolders(AValue: TStrings);
+    procedure SetClientProfileEnableFeatures(AValue: TStrings);
+    procedure SetClientProfileDisableFeatures(AValue: TStrings);
   published
     // Path to the main program file for resolving references
     // if not available the path of the current document will be used
     property &program: String read fProgram write fProgram;
     // Path to SQLite3 database for symbols
     property symbolDatabase: String read fSymbolDatabase write fSymbolDatabase;
-    // Symbol mode: "flat", "hierarchical", or "auto" (default, based on client capability)
-    // For backward compatibility: "symbolInformation" maps to "flat", "documentSymbol" maps to "hierarchical"
-    property symbolMode: String read fSymbolMode write fSymbolMode;
     // FPC compiler options (passed to Code Tools)
     property fpcOptions: TStrings read fFPCOptions write SetFPCOptions;
     // Optional codetools.config file to load settings from
@@ -103,6 +103,11 @@ type
     property config: String read fConfig write fConfig;
     // Check inactive regions
     property checkInactiveRegions : Boolean read fBooleans[11] write fBooleans[11];
+    // Client profile feature overrides
+    property clientProfileEnableFeatures: TStrings
+      read fClientProfileEnableFeatures write SetClientProfileEnableFeatures;
+    property clientProfileDisableFeatures: TStrings
+      read fClientProfileDisableFeatures write SetClientProfileDisableFeatures;
   public
     constructor Create; override;
     Destructor Destroy; override;
@@ -229,13 +234,14 @@ begin
     fBooleans:=Src.FBooleans;
     fProgram:=Src.fProgram;;
     SymbolDatabase:=Src.SymbolDatabase;
-    SymbolMode:=Src.SymbolMode;
     FPCOptions:=Src.fpcOptions;
     ExcludeWorkspaceFolders:=Src.ExcludeWorkspaceFolders;
     CodeToolsConfig:=Src.CodeToolsConfig;
     MaximumCompletions:=Src.MaximumCompletions;
     OverloadPolicy:=Src.OverloadPolicy;
     Config:=Src.Config;
+    ClientProfileEnableFeatures := Src.ClientProfileEnableFeatures;
+    ClientProfileDisableFeatures := Src.ClientProfileDisableFeatures;
     end
   else
     inherited Assign(aSource);
@@ -253,6 +259,18 @@ begin
   fExcludeWorkspaceFolders.Assign(AValue);
 end;
 
+procedure TServerSettings.SetClientProfileEnableFeatures(AValue: TStrings);
+begin
+  if fClientProfileEnableFeatures = AValue then Exit;
+  fClientProfileEnableFeatures.Assign(AValue);
+end;
+
+procedure TServerSettings.SetClientProfileDisableFeatures(AValue: TStrings);
+begin
+  if fClientProfileDisableFeatures = AValue then Exit;
+  fClientProfileDisableFeatures.Assign(AValue);
+end;
+
 function TServerSettings.CanProvideWorkspaceSymbols: boolean;
 begin
   result := workspaceSymbols and
@@ -265,7 +283,6 @@ begin
   case PropName of
     'program': Result := 'Path to the main program file for resolving references';
     'symbolDatabase': Result := 'Path to SQLite3 database for symbols';
-    'symbolMode': Result := 'Symbol mode: "flat", "hierarchical", or "auto" (default)';
     'fpcOptions': Result := 'FPC compiler options (passed to Code Tools)';
     'codeToolsConfig': Result := 'Optional codetools.config file to load settings from';
     'maximumCompletions': Result := 'Maximum number of completion items to be returned';
@@ -284,6 +301,8 @@ begin
     'ignoreTextCompletions': Result := 'Ignores completion items like "begin" and "var"';
     'config': Result := 'Config file or directory to read settings from';
     'checkInactiveRegions': Result := 'Check inactive regions';
+    'clientProfileEnableFeatures': Result := 'List of features to force-enable regardless of client profile';
+    'clientProfileDisableFeatures': Result := 'List of features to force-disable regardless of client profile';
     else
       Result := '';
   end;
@@ -295,6 +314,8 @@ begin
 
   fFPCOptions := TStringList.Create;
   fExcludeWorkspaceFolders := TStringList.Create;
+  fClientProfileEnableFeatures := TStringList.Create;
+  fClientProfileDisableFeatures := TStringList.Create;
 
   // default settings
   symbolDatabase := '';
@@ -320,6 +341,8 @@ destructor TServerSettings.Destroy;
 begin
   FreeAndNil(fFPCOptions);
   FreeAndNil(fExcludeWorkspaceFolders);
+  FreeAndNil(fClientProfileEnableFeatures);
+  FreeAndNil(fClientProfileDisableFeatures);
   inherited Destroy;
 end;
 

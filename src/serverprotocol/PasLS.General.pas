@@ -100,7 +100,7 @@ Type
 implementation
 
 uses
-  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates;
+  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates, PasLS.ClientProfile;
 
 
 const
@@ -306,10 +306,6 @@ begin
   DoLog('  ► publishDiagnostics: ', ServerSettings.publishDiagnostics);
   DoLog('  ► workspaceSymbols: ', ServerSettings.workspaceSymbols);
   DoLog('  ► documentSymbols: ', ServerSettings.documentSymbols);
-  if ServerSettings.symbolMode <> '' then
-    DoLog('  ► symbolMode: %s', [ServerSettings.symbolMode])
-  else
-    DoLog('  ► symbolMode: auto');
   DoLog('  ► minimalisticCompletions: ', ServerSettings.minimalisticCompletions);
   DoLog('  ► showSyntaxErrors: ', ServerSettings.showSyntaxErrors);
 end;
@@ -388,6 +384,16 @@ begin
 
     ServerSettings.Assign(Params.initializationOptions);
     PasLS.Settings.ClientInfo.Assign(Params.ClientInfo);
+
+    // Select client profile based on client name
+    TClientProfile.SelectProfile(Params.ClientInfo.name);
+
+    // Apply user overrides from initializationOptions
+    if (ServerSettings.clientProfileEnableFeatures.Count > 0) or
+       (ServerSettings.clientProfileDisableFeatures.Count > 0) then
+      TClientProfile.ApplyOverrides(
+        ServerSettings.clientProfileEnableFeatures,
+        ServerSettings.clientProfileDisableFeatures);
 
     // Detect hierarchical document symbol support
     if Assigned(Params.capabilities) and

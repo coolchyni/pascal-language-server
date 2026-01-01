@@ -153,6 +153,8 @@ type
     RelatedFiles: TFPHashList;
     IndentLevel: integer;
     CodeSection: TCodeTreeNodeDesc;
+    function ShouldExcludeInterfaceDecl: Boolean;
+    function ShouldExcludeImplClass: Boolean;
   private
     procedure PrintNodeDebug(Node: TCodeTreeNode; Deep: boolean = false);
     procedure AdjustEndPosition(Node: TCodeTreeNode; var EndPos: TCodeXYPosition);
@@ -266,35 +268,24 @@ procedure AdjustEndPositionForLSP(Node: TCodeTreeNode; var EndPos: TCodeXYPositi
 implementation
 uses
   { RTL }
-  SysUtils, FileUtil, DateUtils, fpjsonrtti, 
+  SysUtils, FileUtil, DateUtils, fpjsonrtti,
   { Code Tools }
   CodeAtom,
   FindDeclarationTool, KeywordFuncLists,PascalParserTool,
   { Protocol }
-  PasLS.Settings;
+  PasLS.Settings, PasLS.ClientProfile;
 
 function GetSymbolMode: TSymbolMode;
-var
-  ModeStr: String;
 begin
-  // Check if symbolMode is explicitly set in initializationOptions
-  ModeStr := LowerCase(ServerSettings.symbolMode);
+  // Priority 1: Client profile forces flat mode
+  if TClientProfile.Current.HasFeature(cfFlatSymbolMode) then
+    Exit(smFlat);
 
-  // Explicit mode values
-  if ModeStr = 'flat' then
-    Result := smFlat
-  else if ModeStr = 'hierarchical' then
+  // Priority 2: Auto mode - use hierarchical if client supports it and server enables it
+  if ClientSupportsDocumentSymbol and ServerSettings.documentSymbols then
     Result := smHierarchical
   else
-    begin
-      // Auto mode (default): Use hierarchical format only if:
-      // 1. Client supports hierarchical document symbols, AND
-      // 2. Server settings has documentSymbols enabled (not disabled in initializationOptions)
-      if ClientSupportsDocumentSymbol and ServerSettings.documentSymbols then
-        Result := smHierarchical
-      else
-        Result := smFlat;
-    end;
+    Result := smFlat;
 end;
 
 procedure SetClientCapabilities(SupportsDocumentSymbol: Boolean);
@@ -970,6 +961,20 @@ begin
   AdjustEndPositionForLSP(Node, EndPos);
 end;
 
+function TSymbolExtractor.ShouldExcludeInterfaceDecl: Boolean;
+begin
+  Result := (Builder.Mode = smFlat) and
+            (CodeSection = ctnInterface) and
+            TClientProfile.Current.HasFeature(cfExcludeInterfaceMethodDecls);
+end;
+
+function TSymbolExtractor.ShouldExcludeImplClass: Boolean;
+begin
+  Result := (Builder.Mode = smFlat) and
+            (CodeSection = ctnImplementation) and
+            TClientProfile.Current.HasFeature(cfExcludeImplClassDefs);
+end;
+
 function TSymbolExtractor.AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind; Name: String; Container: String): TSymbol;
 var
   CodePos, EndPos: TCodeXYPosition;
@@ -1029,6 +1034,7 @@ begin
               end;
           end;
         ctnProcedure:
+          if not ShouldExcludeInterfaceDecl then
           begin
             // Use Builder.AddMethod for consistent handling in both modes
             TypeName := GetIdentifierAtPos(Tool, ClassNode.StartPos, true, true);
@@ -1070,7 +1076,8 @@ begin
               while Child <> nil do
                 begin
                   PrintNodeDebug(Child);
-                  AddSymbol(Node, TSymbolKind._Method, TypeName+'.'+Tool.ExtractProcName(Child, []));
+                  if not ShouldExcludeInterfaceDecl then
+                    AddSymbol(Node, TSymbolKind._Method, TypeName+'.'+Tool.ExtractProcName(Child, []));
                   Child := Child.NextBrother;
                 end;
             end
@@ -1117,6 +1124,12 @@ begin
             // Use ctnsForwardDeclaration flag, not FirstChild check
             // (empty class "TMyClass = class end;" has no children but is NOT forward)
             if (Node.SubDesc and ctnsForwardDeclaration) > 0 then
+              begin
+                Node := Node.NextBrother;
+                continue;
+              end;
+            // Skip implementation class definitions when filter is enabled (smFlat mode only)
+            if ShouldExcludeImplClass then
               begin
                 Node := Node.NextBrother;
                 continue;
@@ -1305,17 +1318,19 @@ begin
               begin
                 // For hierarchical mode, create Interface namespace
                 Builder.BeginInterfaceSection(Node);
-                // For flat mode, add namespace symbol
+                // For flat mode, add namespace symbol (unless filtered)
                 if Builder.Mode = smFlat then
-                  AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Interface);
+                  if not TClientProfile.Current.HasFeature(cfExcludeSectionContainers) then
+                    AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Interface);
               end;
             ctnImplementation:
               begin
                 // For hierarchical mode, create Implementation namespace
                 Builder.BeginImplementationSection(Node);
-                // For flat mode, add namespace symbol
+                // For flat mode, add namespace symbol (unless filtered)
                 if Builder.Mode = smFlat then
-                  AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Implementation);
+                  if not TClientProfile.Current.HasFeature(cfExcludeSectionContainers) then
+                    AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Implementation);
               end;
           end;
           CodeSection := Node.Desc;
@@ -1379,7 +1394,7 @@ begin
                       Symbol.containerName.Value + '.' + Symbol.name);
 
                     // In flat mode, we also need to track class symbols for range updates
-                    if Builder.Mode = smFlat then
+                    if (Builder.Mode = smFlat) and not ShouldExcludeImplClass then
                       begin
                         if (LastClassSymbol=nil) or (Symbol.containerName.Value<>LastClassSymbol.name) then
                           LastClassSymbol:=AddSymbol(Node,TSymbolKind._Class,Symbol.containerName.Value)
@@ -1393,9 +1408,12 @@ begin
                     // F1 Scheme: Add to current section's namespace
                     // - Interface section: function declaration
                     // - Implementation section: function implementation
-                    Builder.AddGlobalFunction(Node, Symbol.name);
-                    // Process nested functions - parent path is function name
-                    ProcessNestedFunctions(Node, Builder.LastAddedFunction, Symbol.name);
+                    if not ShouldExcludeInterfaceDecl then
+                    begin
+                      Builder.AddGlobalFunction(Node, Symbol.name);
+                      // Process nested functions - parent path is function name
+                      ProcessNestedFunctions(Node, Builder.LastAddedFunction, Symbol.name);
+                    end;
                   end;
               end;
 
