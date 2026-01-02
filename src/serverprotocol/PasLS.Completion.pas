@@ -55,32 +55,19 @@ implementation
 
 uses
   SysUtils, Contnrs,
-  PasLS.CodeUtils, PasLS.Diagnostics, PasLS.Settings, LSP.Messages;
+  PasLS.CodeUtils, PasLS.Diagnostics, PasLS.Settings, PasLS.ClientProfile;
 
 procedure TCompletionItemHelper.SetPrimaryText(text: string);
-
 begin
-  if ClientInfo.name = TClients.SublimeTextLSP then
-    begin
-      filterText := text;
-    end
-  else
-    begin
-      filterText := text;
-      &label := text;
-    end;
+  filterText := text;
+  if not TClientProfile.Current.HasFeature(cfFilterTextOnly) then
+    &label := text;
 end;
 
 procedure TCompletionItemHelper.SetSecondaryText(text: string);
 begin
-  if ClientInfo.name = TClients.SublimeTextLSP then
-    begin
-      &label := text;
-    end
-  else
-    begin
-      // todo: append to details?
-    end;
+  if not TClientProfile.Current.HasFeature(cfFilterTextOnly) then
+    &label := text;
 end;
 
 

@@ -138,6 +138,10 @@
         <Filename Value="PasLS.InactiveRegions.pas"/>
         <UnitName Value="PasLS.InactiveRegions"/>
       </Item>
+      <Item>
+        <Filename Value="PasLS.ClientProfile.pas"/>
+        <UnitName Value="PasLS.ClientProfile"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>

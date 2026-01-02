@@ -90,8 +90,8 @@ begin with Params do
         // Ryan, uncomment this to have a syntax check at
         // CheckSyntax(Self.Transport,Code);
 
-        //if SymbolManager <> nil then
-        //  SymbolManager.FileModified(Code);
+        if SymbolManager <> nil then
+          SymbolManager.FileModified(Code);
       end;
       // DoLog( 'Synched text in %d ms',[MilliSecondsBetween(Now, StartTime)]);
     end;

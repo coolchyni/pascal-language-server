@@ -23,8 +23,10 @@ program pasls;
 {$mode objfpc}{$H+}
 
 uses
+  {$IFDEF WINDOWS}
+  Windows,
+  {$ENDIF}
   { RTL }
-
   SysUtils, Classes, FPJson, JSONParser, JSONScanner, TypInfo,
   { Protocol }
   PasLS.AllCommands, PasLS.Settings, PasLS.Commands,
@@ -96,6 +98,9 @@ var
   PropInfo: PPropInfo;
   PropName, TypeName, DefaultValue, Description: String;
 begin
+  {$IFDEF WINDOWS}
+  SetConsoleOutputCP(CP_UTF8);  // 65001
+  {$ENDIF}
   Settings := TServerSettings.Create;
   try
     PropCount := GetPropList(Settings, PropList);
