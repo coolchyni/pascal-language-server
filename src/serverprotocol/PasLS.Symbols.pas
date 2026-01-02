@@ -78,6 +78,69 @@ type
     property RawJSON: String read GetRawJSON;
   end;
 
+  { TSymbolBuilder }
+
+  { Dual-mode symbol builder supporting both SymbolInformation (legacy)
+    and DocumentSymbol (LSP 3.10+) output formats }
+
+  TSymbolMode = (
+    smFlat,        // Output SymbolInformation[] with Class.Method naming (Lazarus style)
+    smHierarchical // Output DocumentSymbol[] with nested children (LSP 3.10+)
+  );
+
+type
+
+  TSymbolBuilder = class
+  private
+    FMode: TSymbolMode;
+    FEntry: TSymbolTableEntry;
+    FTool: TCodeTool;
+
+    // For hierarchical mode: map className -> TDocumentSymbolEx
+    FClassMap: TFPHashObjectList;
+    FRootSymbols: TDocumentSymbolExItems;
+
+    // For tracking current hierarchy
+    FCurrentClass: TDocumentSymbolEx;
+    // Last added function/method (for nested function support)
+    FLastAddedFunction: TDocumentSymbolEx;
+
+    // For Interface/Implementation namespaces (hierarchical mode)
+    FInterfaceSymbol: TDocumentSymbolEx;
+    FImplementationSymbol: TDocumentSymbolEx;
+    FCurrentSectionSymbol: TDocumentSymbolEx;
+
+    function FindOrCreateClass(const AClassName: String; Node: TCodeTreeNode; IsImplementationContainer: Boolean = False): TDocumentSymbolEx;
+    procedure SetNodeRange(Symbol: TDocumentSymbolEx; Node: TCodeTreeNode);
+    function GetCurrentContainer: TDocumentSymbolExItems;
+    function AddFlatSymbol(Node: TCodeTreeNode; const Name: String; Kind: TSymbolKind; const ContainerName: String = ''): TSymbol;
+  public
+    constructor Create(AEntry: TSymbolTableEntry; ATool: TCodeTool; AMode: TSymbolMode);
+    destructor Destroy; override;
+
+    // Section management (hierarchical mode)
+    procedure BeginInterfaceSection(Node: TCodeTreeNode);
+    procedure BeginImplementationSection(Node: TCodeTreeNode);
+
+    // Add symbols based on mode
+    function AddClass(Node: TCodeTreeNode; const Name: String): TSymbol;
+    function AddMethod(Node: TCodeTreeNode; const AClassName, AMethodName: String): TSymbol;
+    function AddGlobalFunction(Node: TCodeTreeNode; const Name: String): TSymbol;
+    function AddStruct(Node: TCodeTreeNode; const Name: String): TSymbol;
+    function AddProperty(Node: TCodeTreeNode; const AClassName, APropertyName: String): TSymbol;
+    function AddField(Node: TCodeTreeNode; const AClassName, AFieldName: String): TSymbol;
+    // Add nested function as child of parent
+    function AddNestedFunction(Parent: TDocumentSymbolEx; Node: TCodeTreeNode; const Name, ParentPath: String): TDocumentSymbolEx;
+
+    // Serialization
+    procedure SerializeSymbols;
+
+    property Mode: TSymbolMode read FMode;
+    property CurrentClass: TDocumentSymbolEx read FCurrentClass write FCurrentClass;
+    property RootSymbols: TDocumentSymbolExItems read FRootSymbols;
+    property LastAddedFunction: TDocumentSymbolEx read FLastAddedFunction;
+  end;
+
   { TSymbolExtractor }
 
   TSymbolExtractor = class
@@ -85,16 +148,21 @@ type
     Code: TCodeBuffer;
     Tool: TCodeTool;
     Entry: TSymbolTableEntry;
+    Builder: TSymbolBuilder;
     OverloadMap: TFPHashList;
     RelatedFiles: TFPHashList;
     IndentLevel: integer;
     CodeSection: TCodeTreeNodeDesc;
+    function ShouldExcludeInterfaceDecl: Boolean;
+    function ShouldExcludeImplClass: Boolean;
   private
     procedure PrintNodeDebug(Node: TCodeTreeNode; Deep: boolean = false);
+    procedure AdjustEndPosition(Node: TCodeTreeNode; var EndPos: TCodeXYPosition);
     function AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind): TSymbol; overload;
     function AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind; Name: String; Container: String = ''): TSymbol; overload;
     procedure ExtractCodeSection(Node: TCodeTreeNode);
     function ExtractProcedure(ParentNode, Node: TCodeTreeNode):TSymbol;
+    procedure ProcessNestedFunctions(Node: TCodeTreeNode; ParentSymbol: TDocumentSymbolEx; const ParentPath: String);
     procedure ExtractTypeDefinition(TypeDefNode, Node: TCodeTreeNode); 
     procedure ExtractObjCClassMethods(ClassNode, Node: TCodeTreeNode);
   public
@@ -185,15 +253,81 @@ type
 var
   SymbolManager: TSymbolManager = nil;
 
+// Client capabilities and configuration storage
+var
+  ClientSupportsDocumentSymbol: Boolean = False;
+
+function GetSymbolMode: TSymbolMode;
+procedure SetClientCapabilities(SupportsDocumentSymbol: Boolean);
+
+{ Adjusts EndPos for LSP Range specification (end position must be exclusive).
+  For section nodes, moves back one line to not include next section.
+  For other nodes, moves forward one character to make end exclusive. }
+procedure AdjustEndPositionForLSP(Node: TCodeTreeNode; var EndPos: TCodeXYPosition);
+
 implementation
 uses
   { RTL }
-  SysUtils, FileUtil, DateUtils, fpjsonrtti, 
+  SysUtils, FileUtil, DateUtils, fpjsonrtti,
   { Code Tools }
   CodeAtom,
   FindDeclarationTool, KeywordFuncLists,PascalParserTool,
   { Protocol }
-  PasLS.Settings;
+  PasLS.Settings, PasLS.ClientProfile;
+
+function GetSymbolMode: TSymbolMode;
+begin
+  // Priority 1: Client profile forces flat mode
+  if TClientProfile.Current.HasFeature(cfFlatSymbolMode) then
+    Exit(smFlat);
+
+  // Priority 2: Auto mode - use hierarchical if client supports it and server enables it
+  if ClientSupportsDocumentSymbol and ServerSettings.documentSymbols then
+    Result := smHierarchical
+  else
+    Result := smFlat;
+end;
+
+procedure SetClientCapabilities(SupportsDocumentSymbol: Boolean);
+begin
+  ClientSupportsDocumentSymbol := SupportsDocumentSymbol;
+end;
+
+procedure AdjustEndPositionForLSP(Node: TCodeTreeNode; var EndPos: TCodeXYPosition);
+var
+  LineText: String;
+begin
+  if Node.Desc in AllCodeSections then
+    begin
+      // For section nodes (interface/implementation), CodeTools EndPos points to
+      // the start of the NEXT section (or end of file). We need to move back
+      // one line so we don't include the next section's first line.
+      if EndPos.Y > 1 then
+        begin
+          Dec(EndPos.Y);
+          // Set X to end of the previous line (past last char for exclusive end)
+          if (EndPos.Code <> nil) and (EndPos.Y <= EndPos.Code.LineCount) then
+            EndPos.X := Length(EndPos.Code.GetLine(EndPos.Y - 1, false)) + 1
+          else
+            EndPos.X := 1;
+        end;
+    end
+  else
+    begin
+      // For non-section nodes, move EndPos one position forward to make it exclusive
+      if (EndPos.Code <> nil) and (EndPos.Y > 0) and (EndPos.Y <= EndPos.Code.LineCount) then
+        begin
+          LineText := EndPos.Code.GetLine(EndPos.Y - 1, false);
+          if EndPos.X <= Length(LineText) then
+            Inc(EndPos.X)
+          else
+            // EndPos.X already points past the last character on this line.
+            // Keep it on the same line - don't move to next line.
+            // This prevents single-line symbols from having range extend to next line.
+            EndPos.X := Length(LineText) + 1;
+        end;
+    end;
+end;
 
 function GetFileKey(Path: String): ShortString;
 begin
@@ -219,13 +353,13 @@ end;
 
 function TSymbol.IsGlobal: boolean;
 begin
-  result := containerName <> '';
+  result := Assigned(containerName) and (containerName.Value <> '');
 end;
 
 function TSymbol.GetFullName: String;
 begin
-  if containerName <> '' then
-    Result := containerName+'.'+Name
+  if Assigned(containerName) and (containerName.Value <> '') then
+    Result := containerName.Value+'.'+Name
   else
     Result := Name;
 end;
@@ -234,6 +368,437 @@ constructor TSymbol.Create;
 begin
   // we need this dummy constructor for serializing
   Create(nil);
+end;
+
+{ TSymbolBuilder }
+
+constructor TSymbolBuilder.Create(AEntry: TSymbolTableEntry; ATool: TCodeTool; AMode: TSymbolMode);
+begin
+  FEntry := AEntry;
+  FTool := ATool;
+  FMode := AMode;
+  FCurrentClass := nil;
+
+  if FMode = smHierarchical then
+    begin
+      FClassMap := TFPHashObjectList.Create(False); // Don't own objects - they're owned by FRootSymbols
+      FRootSymbols := TDocumentSymbolExItems.Create;
+    end;
+end;
+
+destructor TSymbolBuilder.Destroy;
+begin
+  if FMode = smHierarchical then
+    begin
+      FreeAndNil(FClassMap);
+      FreeAndNil(FRootSymbols);
+    end;
+  inherited;
+end;
+
+procedure TSymbolBuilder.SetNodeRange(Symbol: TDocumentSymbolEx; Node: TCodeTreeNode);
+var
+  StartPos, EndPos, NamePos: TCodeXYPosition;
+begin
+  if (FTool = nil) or (Symbol = nil) or (Node = nil) then
+    Exit;
+
+  FTool.CleanPosToCaret(Node.StartPos, StartPos);
+  FTool.CleanPosToCaret(Node.EndPos, EndPos);
+
+  // Use shared adjustment logic for LSP Range specification
+  AdjustEndPositionForLSP(Node, EndPos);
+
+  Symbol.range.SetRange(StartPos.Y - 1, StartPos.X - 1, EndPos.Y - 1, EndPos.X - 1);
+
+  // For procedure/function nodes, find the actual name position
+  // Node.StartPos points to keyword ("procedure"/"function"), but we need
+  // the name position for selectionRange to highlight correctly in editors
+  if Node.Desc = ctnProcedure then
+    begin
+      FTool.MoveCursorToProcName(Node, True); // True = skip className prefix
+      FTool.CleanPosToCaret(FTool.CurPos.StartPos, NamePos);
+      Symbol.selectionRange.SetRange(NamePos.Y - 1, NamePos.X - 1, NamePos.Y - 1, NamePos.X - 1 + Length(Symbol.name));
+    end
+  else
+    Symbol.selectionRange.SetRange(StartPos.Y - 1, StartPos.X - 1, StartPos.Y - 1, StartPos.X - 1 + Length(Symbol.name));
+end;
+
+function TSymbolBuilder.GetCurrentContainer: TDocumentSymbolExItems;
+begin
+  // In hierarchical mode, return the current section's children if available
+  if (FMode = smHierarchical) and (FCurrentSectionSymbol <> nil) then
+    Result := TDocumentSymbolExItems(FCurrentSectionSymbol.children)
+  else
+    Result := FRootSymbols;
+end;
+
+function TSymbolBuilder.AddFlatSymbol(Node: TCodeTreeNode; const Name: String; Kind: TSymbolKind; const ContainerName: String = ''): TSymbol;
+var
+  CodePos, EndPos: TCodeXYPosition;
+begin
+  Result := nil;
+  if (FTool <> nil) and (Node <> nil) then
+    begin
+      FTool.CleanPosToCaret(Node.StartPos, CodePos);
+      FTool.CleanPosToCaret(Node.EndPos, EndPos);
+      // Adjust EndPos for LSP Range specification (end position must be exclusive)
+      AdjustEndPositionForLSP(Node, EndPos);
+      Result := FEntry.AddSymbol(Name, Kind,
+                                 CodePos.Code.FileName,
+                                 CodePos.Y, CodePos.X,
+                                 EndPos.Y, EndPos.X);
+      // Set containerName for LSP semantics in workspace/symbol
+      if (Result <> nil) and (ContainerName <> '') then
+        Result.containerName := TOptionalString.Create(ContainerName);
+    end;
+end;
+
+procedure TSymbolBuilder.BeginInterfaceSection(Node: TCodeTreeNode);
+begin
+  if FMode <> smHierarchical then
+    Exit;
+
+  // Create interface namespace symbol
+  FInterfaceSymbol := TDocumentSymbolEx.Create(FRootSymbols);
+  FInterfaceSymbol.name := kSymbolName_Interface;
+  FInterfaceSymbol.kind := TSymbolKind._Namespace;
+  SetNodeRange(FInterfaceSymbol, Node);
+  FCurrentSectionSymbol := FInterfaceSymbol;
+end;
+
+procedure TSymbolBuilder.BeginImplementationSection(Node: TCodeTreeNode);
+begin
+  if FMode <> smHierarchical then
+    Exit;
+
+  // Create implementation namespace symbol
+  FImplementationSymbol := TDocumentSymbolEx.Create(FRootSymbols);
+  FImplementationSymbol.name := kSymbolName_Implementation;
+  FImplementationSymbol.kind := TSymbolKind._Namespace;
+  SetNodeRange(FImplementationSymbol, Node);
+  FCurrentSectionSymbol := FImplementationSymbol;
+end;
+
+function TSymbolBuilder.FindOrCreateClass(const AClassName: String; Node: TCodeTreeNode; IsImplementationContainer: Boolean = False): TDocumentSymbolEx;
+var
+  Container: TDocumentSymbolExItems;
+  Key: String;
+begin
+  Result := nil;
+
+  if FMode <> smHierarchical then
+    Exit;
+
+  // F1 Scheme: Classes exist in both Interface and Implementation namespaces
+  // Use section-specific key to distinguish between interface declaration and implementation methods
+  // Note: Must check for nil first, otherwise nil = nil is True for program files
+  if (FInterfaceSymbol <> nil) and (FCurrentSectionSymbol = FInterfaceSymbol) then
+    Key := 'interface.' + AClassName
+  else if (FImplementationSymbol <> nil) and (FCurrentSectionSymbol = FImplementationSymbol) then
+    Key := 'implementation.' + AClassName
+  else
+    begin
+      // Program files: distinguish between declaration and implementation container
+      if IsImplementationContainer then
+        Key := AClassName + '.impl'
+      else
+        Key := AClassName;
+    end;
+
+  // Check if class already exists in current section
+  Result := TDocumentSymbolEx(FClassMap.Find(Key));
+
+  if Result = nil then
+    begin
+      // Create class in current section's namespace
+      Container := GetCurrentContainer;
+
+      Result := TDocumentSymbolEx.Create(Container);
+      Result.name := AClassName;
+      Result.kind := TSymbolKind._Class;
+
+      // Set ranges using the node
+      if Node <> nil then
+        SetNodeRange(Result, Node);
+
+      // Add reference to class map for lookup with section-specific key
+      FClassMap.Add(Key, Result);
+    end;
+end;
+
+function TSymbolBuilder.AddClass(Node: TCodeTreeNode; const Name: String): TSymbol;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: add class to Entry.Symbols
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Class);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: Create class in current section's namespace
+        // - Interface section: class declaration
+        // - Implementation section: class with method implementations (rare)
+        FCurrentClass := FindOrCreateClass(Name, Node);
+        // Also add to flat symbol list for database/workspace symbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Class);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddMethod(Node: TCodeTreeNode; const AClassName, AMethodName: String): TSymbol;
+var
+  ClassSymbol: TDocumentSymbolEx;
+  MethodSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: Class.Method naming, no containerName (Lazarus style)
+        Result := AddFlatSymbol(Node, AClassName + '.' + AMethodName, TSymbolKind._Method);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: Add method as child of class
+        ClassSymbol := FindOrCreateClass(AClassName, nil, True);
+        if ClassSymbol <> nil then
+          begin
+            MethodSymbol := TDocumentSymbolEx.Create(ClassSymbol.children);
+            MethodSymbol.name := AMethodName;
+            MethodSymbol.kind := TSymbolKind._Method;
+            SetNodeRange(MethodSymbol, Node);
+            FLastAddedFunction := MethodSymbol;
+
+            // Initialize or extend class range to include method
+            if (ClassSymbol.range.start.line = 0) and (ClassSymbol.range.&end.line = 0) then
+              begin
+                // First method - initialize class range
+                ClassSymbol.range.start.line := MethodSymbol.range.start.line;
+                ClassSymbol.range.start.character := MethodSymbol.range.start.character;
+                ClassSymbol.range.&end.line := MethodSymbol.range.&end.line;
+                ClassSymbol.range.&end.character := MethodSymbol.range.&end.character;
+                ClassSymbol.selectionRange := ClassSymbol.range;
+              end
+            else
+              begin
+                // Extend class range to include this method
+                if MethodSymbol.range.start.line < ClassSymbol.range.start.line then
+                  begin
+                    ClassSymbol.range.start.line := MethodSymbol.range.start.line;
+                    ClassSymbol.range.start.character := MethodSymbol.range.start.character;
+                  end;
+                if MethodSymbol.range.&end.line > ClassSymbol.range.&end.line then
+                  begin
+                    ClassSymbol.range.&end.line := MethodSymbol.range.&end.line;
+                    ClassSymbol.range.&end.character := MethodSymbol.range.&end.character;
+                  end;
+              end;
+          end;
+
+        // Add to flat symbol list for database/workspace symbol with LSP semantics
+        // name=MethodName, containerName=ClassName
+        Result := AddFlatSymbol(Node, AMethodName, TSymbolKind._Method, AClassName);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddGlobalFunction(Node: TCodeTreeNode; const Name: String): TSymbol;
+var
+  GlobalSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: add function to Entry.Symbols
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Function);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: Add to current container (Interface or Implementation namespace)
+        GlobalSymbol := TDocumentSymbolEx.Create(GetCurrentContainer);
+        GlobalSymbol.name := Name;
+        GlobalSymbol.kind := TSymbolKind._Function;
+        SetNodeRange(GlobalSymbol, Node);
+        FLastAddedFunction := GlobalSymbol;
+        // Also add to flat symbol list for database/workspace symbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Function);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddStruct(Node: TCodeTreeNode; const Name: String): TSymbol;
+var
+  StructSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: add struct to Entry.Symbols
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Struct);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: Add struct to current container
+        StructSymbol := TDocumentSymbolEx.Create(GetCurrentContainer);
+        StructSymbol.name := Name;
+        StructSymbol.kind := TSymbolKind._Struct;
+        SetNodeRange(StructSymbol, Node);
+        // Also add to flat symbol list for database/workspace symbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Struct);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddProperty(Node: TCodeTreeNode; const AClassName, APropertyName: String): TSymbol;
+var
+  ClassSymbol: TDocumentSymbolEx;
+  PropertySymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: Class.Property naming, no containerName (Lazarus style)
+        Result := AddFlatSymbol(Node, AClassName + '.' + APropertyName, TSymbolKind._Property);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: add property to class's children
+        ClassSymbol := FindOrCreateClass(AClassName, Node);
+        if ClassSymbol <> nil then
+          begin
+            PropertySymbol := TDocumentSymbolEx.Create(ClassSymbol.children);
+            PropertySymbol.name := APropertyName;
+            PropertySymbol.kind := TSymbolKind._Property;
+            SetNodeRange(PropertySymbol, Node);
+          end;
+        // Add to flat symbol list with LSP semantics
+        Result := AddFlatSymbol(Node, APropertyName, TSymbolKind._Property, AClassName);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddField(Node: TCodeTreeNode; const AClassName, AFieldName: String): TSymbol;
+var
+  ClassSymbol: TDocumentSymbolEx;
+  FieldSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: Class.Field naming, no containerName (Lazarus style)
+        Result := AddFlatSymbol(Node, AClassName + '.' + AFieldName, TSymbolKind._Field);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: add field to class's children
+        ClassSymbol := FindOrCreateClass(AClassName, Node);
+        if ClassSymbol <> nil then
+          begin
+            FieldSymbol := TDocumentSymbolEx.Create(ClassSymbol.children);
+            FieldSymbol.name := AFieldName;
+            FieldSymbol.kind := TSymbolKind._Field;
+            SetNodeRange(FieldSymbol, Node);
+          end;
+        // Add to flat symbol list with LSP semantics
+        Result := AddFlatSymbol(Node, AFieldName, TSymbolKind._Field, AClassName);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddNestedFunction(Parent: TDocumentSymbolEx; Node: TCodeTreeNode; const Name, ParentPath: String): TDocumentSymbolEx;
+var
+  FullPath: String;
+begin
+  Result := nil;
+  FullPath := ParentPath + '.' + Name;
+
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: full path name, no containerName (Lazarus style)
+        AddFlatSymbol(Node, FullPath, TSymbolKind._Function);
+      end;
+
+    smHierarchical:
+      begin
+        if Parent = nil then
+          Exit;
+
+        // Create nested function as child of parent
+        Result := TDocumentSymbolEx.Create(Parent.children);
+        Result.name := Name;
+        Result.kind := TSymbolKind._Function;
+        SetNodeRange(Result, Node);
+
+        // Add to flat symbol list with LSP semantics
+        // name=NestedName, containerName=ParentPath
+        AddFlatSymbol(Node, Name, TSymbolKind._Function, ParentPath);
+      end;
+  end;
+end;
+
+procedure TSymbolBuilder.SerializeSymbols;
+const
+  BATCH_COUNT = 1000;
+var
+  SerializedItems: TJSONArray;
+  i, Start, Next, Total: Integer;
+  Symbol: TSymbol;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Use existing serialization for flat SymbolInformation[]
+        FEntry.SerializeSymbols;
+      end;
+
+    smHierarchical:
+      begin
+        // Serialize DocumentSymbol hierarchy for textDocument/documentSymbol
+        SerializedItems := specialize TLSPStreaming<TDocumentSymbolExItems>.ToJSON(FRootSymbols) as TJSONArray;
+        try
+          FEntry.fRawJSON := SerializedItems.AsJSON;
+        finally
+          SerializedItems.Free;
+        end;
+
+        // Serialize flat SymbolInformation[] for database insertion and workspace/symbol
+        SerializedItems := specialize TLSPStreaming<TSymbolItems>.ToJSON(FEntry.Symbols) as TJSONArray;
+        try
+          // Set RawJSON for each symbol (needed for database insertion)
+          for i := 0 to SerializedItems.Count - 1 do
+            begin
+              Symbol := FEntry.Symbols.Items[i];
+              Symbol.RawJSON := SerializedItems[i].AsJson;
+            end;
+
+          // Insert symbols into database if available
+          if SymbolManager.Database <> nil then
+            begin
+              Next := 0;
+              Start := 0;
+              Total := SerializedItems.Count;
+              while Start < Total do
+                begin
+                  Next := Start + BATCH_COUNT;
+                  if Next >= Total then
+                    Next := Total - 1;
+                  SymbolManager.Database.InsertSymbols(FEntry.Symbols, Start, Next);
+                  Start := Next + 1;
+                end;
+            end;
+        finally
+          SerializedItems.Free;
+        end;
+      end;
+  end;
 end;
 
 { TSymbolTableEntry }
@@ -391,34 +956,39 @@ begin
   result := AddSymbol(Node, Kind, GetIdentifierAtPos(Tool, Node.StartPos, true, true));
 end;
 
+procedure TSymbolExtractor.AdjustEndPosition(Node: TCodeTreeNode; var EndPos: TCodeXYPosition);
+begin
+  AdjustEndPositionForLSP(Node, EndPos);
+end;
+
+function TSymbolExtractor.ShouldExcludeInterfaceDecl: Boolean;
+begin
+  Result := (Builder.Mode = smFlat) and
+            (CodeSection = ctnInterface) and
+            TClientProfile.Current.HasFeature(cfExcludeInterfaceMethodDecls);
+end;
+
+function TSymbolExtractor.ShouldExcludeImplClass: Boolean;
+begin
+  Result := (Builder.Mode = smFlat) and
+            (CodeSection = ctnImplementation) and
+            TClientProfile.Current.HasFeature(cfExcludeImplClassDefs);
+end;
+
 function TSymbolExtractor.AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind; Name: String; Container: String): TSymbol;
 var
-  CodePos,EndPos: TCodeXYPosition;
+  CodePos, EndPos: TCodeXYPosition;
   FileName: String;
-  LineText: String;
 begin
   {$ifdef SYMBOL_DEBUG}
   writeln(IndentLevelString(IndentLevel + 1), '* ', Name);
   {$endif}
 
   Tool.CleanPosToCaret(Node.StartPos, CodePos);
-  Tool.CleanPosToCaret(Node.EndPos,EndPos);
+  Tool.CleanPosToCaret(Node.EndPos, EndPos);
 
-  // Fix for LSP Range specification: end position must be exclusive
-  // Move EndPos one position forward to make it exclusive
-  if (EndPos.Code <> nil) and (EndPos.Y > 0) and (EndPos.Y <= EndPos.Code.LineCount) then
-    begin
-      LineText := EndPos.Code.GetLine(EndPos.Y - 1, false);
-      // X is 1-based, so X <= Length means we're within the line
-      if EndPos.X <= Length(LineText) then
-        Inc(EndPos.X)
-      else
-        begin
-          // Move to next line if already past end of current line (use 1-based indexing)
-          Inc(EndPos.Y);
-          EndPos.X := 1;
-        end;
-    end;
+  // Adjust EndPos for LSP Range specification (end position must be exclusive)
+  AdjustEndPosition(Node, EndPos);
 
   // clear existing symbols in symbol database
   // we don't know which include files are associated
@@ -441,7 +1011,8 @@ procedure TSymbolExtractor.ExtractObjCClassMethods(ClassNode, Node: TCodeTreeNod
 var
   Child: TCodeTreeNode;
   ExternalClass: boolean = false;
-  TypeName: String;
+  TypeName, PropertyName, FieldName: String;
+  i: Integer;
 begin
   while Node <> nil do
     begin
@@ -463,8 +1034,35 @@ begin
               end;
           end;
         ctnProcedure:
+          if not ShouldExcludeInterfaceDecl then
           begin
-            AddSymbol(Node, TSymbolKind._Method, Tool.ExtractProcName(Node, []));
+            // Use Builder.AddMethod for consistent handling in both modes
+            TypeName := GetIdentifierAtPos(Tool, ClassNode.StartPos, true, true);
+            Builder.AddMethod(Node, TypeName, Tool.ExtractProcName(Node, []));
+          end;
+        ctnProperty:
+          begin
+            // For property, skip the "property" keyword to get the actual property name
+            Tool.MoveCursorToCleanPos(Node.StartPos);
+            Tool.ReadNextAtom; // Skip "property" keyword
+            Tool.ReadNextAtom; // Move to property name
+            TypeName := GetIdentifierAtPos(Tool, ClassNode.StartPos, true, true);
+            // Extract property name from current atom
+            PropertyName := Copy(Tool.Scanner.CleanedSrc, Tool.CurPos.StartPos,
+                                 Tool.CurPos.EndPos - Tool.CurPos.StartPos);
+            Builder.AddProperty(Node, TypeName, PropertyName);
+          end;
+        ctnVarDefinition:
+          begin
+            // Extract field (class member variable)
+            TypeName := GetIdentifierAtPos(Tool, ClassNode.StartPos, true, true);
+            // For field, extract identifier without the colon
+            FieldName := GetIdentifierAtPos(Tool, Node.StartPos, true, true);
+            // Remove trailing colon if present
+            i := Pos(':', FieldName);
+            if i > 0 then
+              FieldName := Copy(FieldName, 1, i - 1);
+            Builder.AddField(Node, TypeName, FieldName);
           end;
         ctnClassPublic,ctnClassPublished,ctnClassPrivate,ctnClassProtected,
         ctnClassRequired,ctnClassOptional:
@@ -478,9 +1076,17 @@ begin
               while Child <> nil do
                 begin
                   PrintNodeDebug(Child);
-                  AddSymbol(Node, TSymbolKind._Method, TypeName+'.'+Tool.ExtractProcName(Child, []));
+                  if not ShouldExcludeInterfaceDecl then
+                    AddSymbol(Node, TSymbolKind._Method, TypeName+'.'+Tool.ExtractProcName(Child, []));
                   Child := Child.NextBrother;
                 end;
+            end
+          else
+            begin
+              // For regular Pascal classes, recurse into visibility sections
+              Inc(IndentLevel);
+              ExtractObjCClassMethods(ClassNode, Node.FirstChild);
+              Dec(IndentLevel);
             end;
       end;
 
@@ -488,9 +1094,24 @@ begin
     end;
 end;
 
-procedure TSymbolExtractor.ExtractTypeDefinition(TypeDefNode, Node: TCodeTreeNode); 
+// Helper to clean type name - removes trailing operators like '=' from 'TMyClass='
+function CleanTypeName(const AName: String): String;
+var
+  Len: Integer;
+const
+  OpChars = ['+', '*', '-', '/', '<', '>', '=', ':'];
+begin
+  Result := AName;
+  Len := Length(Result);
+  while (Len > 0) and (Result[Len] in OpChars) do
+    Dec(Len);
+  SetLength(Result, Len);
+end;
+
+procedure TSymbolExtractor.ExtractTypeDefinition(TypeDefNode, Node: TCodeTreeNode);
 var
   Child: TCodeTreeNode;
+  TypeName: String;
 begin
   while Node <> nil do
     begin
@@ -499,16 +1120,36 @@ begin
       case Node.Desc of
         ctnClass,ctnClassHelper,ctnRecordHelper,ctnTypeHelper:
           begin
-            AddSymbol(TypeDefNode, TSymbolKind._Class);
+            // Skip forward declarations (e.g., "TMyClass = class;")
+            // Use ctnsForwardDeclaration flag, not FirstChild check
+            // (empty class "TMyClass = class end;" has no children but is NOT forward)
+            if (Node.SubDesc and ctnsForwardDeclaration) > 0 then
+              begin
+                Node := Node.NextBrother;
+                continue;
+              end;
+            // Skip implementation class definitions when filter is enabled (smFlat mode only)
+            if ShouldExcludeImplClass then
+              begin
+                Node := Node.NextBrother;
+                continue;
+              end;
+            TypeName := CleanTypeName(GetIdentifierAtPos(Tool, TypeDefNode.StartPos, true, true));
+            Builder.AddClass(TypeDefNode, TypeName);
+            Inc(IndentLevel);
+            ExtractObjCClassMethods(TypeDefNode, Node.FirstChild);
+            Dec(IndentLevel);
           end;
         ctnObject,ctnRecordType:
           begin
-            AddSymbol(TypeDefNode, TSymbolKind._Struct);
+            TypeName := CleanTypeName(GetIdentifierAtPos(Tool, TypeDefNode.StartPos, true, true));
+            Builder.AddStruct(TypeDefNode, TypeName);
           end;
         ctnObjCClass,ctnObjCCategory,ctnObjCProtocol:
           begin
             // todo: ignore forward defs!
-            AddSymbol(TypeDefNode, TSymbolKind._Class);
+            TypeName := CleanTypeName(GetIdentifierAtPos(Tool, TypeDefNode.StartPos, true, true));
+            Builder.AddClass(TypeDefNode, TypeName);
             Inc(IndentLevel);
             ExtractObjCClassMethods(TypeDefNode, Node.FirstChild);
             Dec(IndentLevel);
@@ -517,7 +1158,8 @@ begin
           begin
             // todo: is this a class/record???
             PrintNodeDebug(Node.FirstChild, true);
-            AddSymbol(TypeDefNode, TSymbolKind._Class);
+            TypeName := CleanTypeName(GetIdentifierAtPos(Tool, TypeDefNode.StartPos, true, true));
+            Builder.AddClass(TypeDefNode, TypeName);
           end;
         ctnEnumerationType:
           begin
@@ -579,8 +1221,14 @@ begin
       end;
     end;
 
-  Symbol := AddSymbol(Node, TSymbolKind._Function, Name);
-  Symbol.containerName:=containerName;
+  // Create symbol for overload tracking metadata only
+  // Builder will handle actual addition to Entry.Symbols or FRootSymbols
+  Symbol := TSymbol.Create(nil);
+  Symbol.name := Name;
+  Symbol.kind := TSymbolKind._Function;
+  if containerName <> '' then
+    Symbol.containerName := TOptionalString.Create(containerName);
+
   OverloadMap.Add(Key, Symbol);
 
   // recurse into procedures to find nested procedures
@@ -603,9 +1251,40 @@ begin
   result := Symbol;
 end;
 
-procedure TSymbolExtractor.ExtractCodeSection(Node: TCodeTreeNode); 
+procedure TSymbolExtractor.ProcessNestedFunctions(Node: TCodeTreeNode; ParentSymbol: TDocumentSymbolEx; const ParentPath: String);
 var
-  Symbol,LastClassSymbol: TSymbol;
+  Child: TCodeTreeNode;
+  NestedSymbol: TDocumentSymbolEx;
+  Name, NestedPath: String;
+begin
+  // In hierarchical mode, we need a parent symbol for hierarchy
+  if (Builder.Mode = smHierarchical) and (ParentSymbol = nil) then
+    Exit;
+
+  // Skip forward/external declarations
+  if Tool.ProcNodeHasSpecifier(Node, psForward) or
+     Tool.ProcNodeHasSpecifier(Node, psExternal) then
+    Exit;
+
+  // Find nested procedures in the node's children
+  Child := Node.FirstChild;
+  while Child <> nil do
+    begin
+      if Child.Desc = ctnProcedure then
+        begin
+          Name := Tool.ExtractProcName(Child, [phpWithoutClassName]);
+          NestedSymbol := Builder.AddNestedFunction(ParentSymbol, Child, Name, ParentPath);
+          // Recursively process nested functions within this nested function
+          NestedPath := ParentPath + '.' + Name;
+          ProcessNestedFunctions(Child, NestedSymbol, NestedPath);
+        end;
+      Child := Child.NextBrother;
+    end;
+end;
+
+procedure TSymbolExtractor.ExtractCodeSection(Node: TCodeTreeNode);
+var
+  Symbol, MethodSymbol, LastClassSymbol: TSymbol;
   Child: TCodeTreeNode;
   Scanner: TLinkScanner;
   LinkIndex: Integer;
@@ -636,9 +1315,23 @@ begin
         begin
           case Node.Desc of
             ctnInterface:
-              AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Interface);
-            //ctnImplementation:
-            //  AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Implementation);
+              begin
+                // For hierarchical mode, create Interface namespace
+                Builder.BeginInterfaceSection(Node);
+                // For flat mode, add namespace symbol (unless filtered)
+                if Builder.Mode = smFlat then
+                  if not TClientProfile.Current.HasFeature(cfExcludeSectionContainers) then
+                    AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Interface);
+              end;
+            ctnImplementation:
+              begin
+                // For hierarchical mode, create Implementation namespace
+                Builder.BeginImplementationSection(Node);
+                // For flat mode, add namespace symbol (unless filtered)
+                if Builder.Mode = smFlat then
+                  if not TClientProfile.Current.HasFeature(cfExcludeSectionContainers) then
+                    AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Implementation);
+              end;
           end;
           CodeSection := Node.Desc;
           Inc(IndentLevel);
@@ -688,16 +1381,40 @@ begin
 
             Symbol:= ExtractProcedure(nil, Node);
 
-            if (Symbol<>nil) and  (Symbol.containerName<>'') then
+            if (Symbol<>nil) then
               begin
-                 if (LastClassSymbol=nil) or  (Symbol.containerName<>LastClassSymbol.name) then
-                 begin
-                     LastClassSymbol:=AddSymbol(Node,TSymbolKind._Class,Symbol.containerName);
-                 end
-                 else
-                 begin
-                    LastClassSymbol.location.range.&end:=Symbol.location.range.&end;
-                 end;
+                // Use Builder to add methods or global functions based on containerName
+                if Assigned(Symbol.containerName) then
+                  begin
+                    // This is a class method
+                    // Capture result to get the actual symbol with proper location
+                    MethodSymbol := Builder.AddMethod(Node, Symbol.containerName.Value, Symbol.name);
+                    // Process nested functions - parent path is ClassName.MethodName
+                    ProcessNestedFunctions(Node, Builder.LastAddedFunction,
+                      Symbol.containerName.Value + '.' + Symbol.name);
+
+                    // In flat mode, we also need to track class symbols for range updates
+                    if (Builder.Mode = smFlat) and not ShouldExcludeImplClass then
+                      begin
+                        if (LastClassSymbol=nil) or (Symbol.containerName.Value<>LastClassSymbol.name) then
+                          LastClassSymbol:=AddSymbol(Node,TSymbolKind._Class,Symbol.containerName.Value)
+                        else if MethodSymbol <> nil then
+                          LastClassSymbol.location.range.&end:=MethodSymbol.location.range.&end;
+                      end;
+                  end
+                else
+                  begin
+                    // This is a global function
+                    // F1 Scheme: Add to current section's namespace
+                    // - Interface section: function declaration
+                    // - Implementation section: function implementation
+                    if not ShouldExcludeInterfaceDecl then
+                    begin
+                      Builder.AddGlobalFunction(Node, Symbol.name);
+                      // Process nested functions - parent path is function name
+                      ProcessNestedFunctions(Node, Builder.LastAddedFunction, Symbol.name);
+                    end;
+                  end;
               end;
 
           end;
@@ -712,12 +1429,15 @@ begin
   Entry := _Entry;
   Code := _Code;
   Tool := _Tool;
+  Builder := TSymbolBuilder.Create(Entry, Tool, GetSymbolMode);
   OverloadMap := TFPHashList.Create;
   RelatedFiles := TFPHashList.Create;
 end;
 
-destructor TSymbolExtractor.Destroy; 
+destructor TSymbolExtractor.Destroy;
 begin
+  Builder.SerializeSymbols;
+  Builder.Free;
   OverloadMap.Free;
   RelatedFiles.Free;
   inherited;
@@ -1223,10 +1943,12 @@ begin
   try
     Extractor.ExtractCodeSection(Tool.Tree.Root);
   finally
-    Extractor.Free;
+    Extractor.Free;  // This calls Builder.SerializeSymbols in the destructor
   end;
 
-  Entry.SerializeSymbols;
+  // Note: Entry.fRawJSON is already set by Builder.SerializeSymbols in Extractor.Destroy
+  // Don't call Entry.SerializeSymbols here as it would overwrite with flat format!
+
   DoLog('Reloaded %s in %d ms', [Code.FileName, MilliSecondsBetween(Now,StartTime)]);
 end;
 

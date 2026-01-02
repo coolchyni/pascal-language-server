@@ -100,7 +100,7 @@ Type
 implementation
 
 uses
-  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates;
+  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates, PasLS.ClientProfile;
 
 
 const
@@ -270,6 +270,7 @@ begin
 
   DoLog( kStatusPrefix+'FPCPath: ' + CodeToolsOptions.FPCPath);
   DoLog( kStatusPrefix+'FPCSrcDir: ' + CodeToolsOptions.FPCSrcDir);
+  DoLog( kStatusPrefix+'LazarusSrcDir: ' + CodeToolsOptions.LazarusSrcDir);
   DoLog( kStatusPrefix+'TargetOS: ' + CodeToolsOptions.TargetOS);
   DoLog( kStatusPrefix+'TargetProcessor: '+ CodeToolsOptions.TargetProcessor);
 
@@ -384,6 +385,24 @@ begin
     ServerSettings.Assign(Params.initializationOptions);
     PasLS.Settings.ClientInfo.Assign(Params.ClientInfo);
 
+    // Select client profile based on client name
+    TClientProfile.SelectProfile(Params.ClientInfo.name);
+
+    // Apply user overrides from initializationOptions
+    if (ServerSettings.clientProfileEnableFeatures.Count > 0) or
+       (ServerSettings.clientProfileDisableFeatures.Count > 0) then
+      TClientProfile.ApplyOverrides(
+        ServerSettings.clientProfileEnableFeatures,
+        ServerSettings.clientProfileDisableFeatures);
+
+    // Detect hierarchical document symbol support
+    if Assigned(Params.capabilities) and
+       Assigned(Params.capabilities.textDocument) and
+       Assigned(Params.capabilities.textDocument.documentSymbol) then
+      SetClientCapabilities(Params.capabilities.textDocument.documentSymbol.hierarchicalDocumentSymbolSupport)
+    else
+      SetClientCapabilities(false);
+
     // replace macros in server settings
     Macros.Add('tmpdir', GetTempDir(true));
     Macros.Add('root', URIToPath(Params.rootUri));
@@ -427,6 +446,7 @@ begin
     if ServerSettings.documentSymbols or ServerSettings.workspaceSymbols then
       begin
       SymbolManager := TSymbolManager.Create;
+      SymbolManager.Transport := Transport;
       Result.capabilities.documentSymbolProvider:=True;
       Result.capabilities.workspaceSymbolProvider := ServerSettings.CanProvideWorkspaceSymbols;
       end;

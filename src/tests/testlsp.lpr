@@ -3,7 +3,8 @@ program testlsp;
 {$mode objfpc}{$H+}
 
 uses
-  Classes, consoletestrunner, Tests.Basic;
+  Classes, consoletestrunner, Tests.Basic, Tests.ClientProfile, Tests.DocumentSymbol,
+  Tests.SublimeProfile;
 
 type
 
