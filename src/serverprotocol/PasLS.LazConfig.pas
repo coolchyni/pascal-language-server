@@ -295,7 +295,7 @@ procedure TLazProjectConfig.DebugLog(const Fmt: string; Args: array of const);
 var
   s: string;
 begin
-  s := Format(Fmt, Args) + LineEnding;
+  s := Format(Fmt, Args);
   DebugLog(s);
 end;
 
