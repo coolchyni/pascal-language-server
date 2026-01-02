@@ -51,7 +51,8 @@ uses
   PasLS.Command.FormatCode,
   PasLS.Command.CompleteCode,
   PasLS.Command.InvertAssignment,
-  PasLS.Command.RemoveEmptyMethods;
+  PasLS.Command.RemoveEmptyMethods,
+  PasLS.Command.RemoveUnusedUnits;
 
 procedure RegisterAllCommands;
 
