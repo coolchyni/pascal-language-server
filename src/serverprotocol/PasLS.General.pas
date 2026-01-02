@@ -68,7 +68,7 @@ Type
     procedure SetPlatformDefaults(CodeToolsOptions : TCodeToolsOptions);
     procedure ApplyConfigSettings(CodeToolsOptions: TCodeToolsOptions);
     procedure FindPascalSourceDirectories(RootPath: String; Results: TStrings; ExcludeFolders: TStrings);
-    Procedure ShowConfigStatus(Params : TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
+    Procedure ShowConfigStatus(Params : TInitializeParams; Paths: TStrings; CodeToolsOptions: TCodeToolsOptions);
   Public
     function Process(var Params : TLSPInitializeParams): TInitializeResult; override;
   end;
@@ -100,13 +100,14 @@ Type
 implementation
 
 uses
-  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates;
+  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates, PasLS.ClientProfile;
 
 
 const
   kStatusPrefix = '✓ ';
   kFailedPrefix = '⚠️ ';
   kSettingPrefix = '  ► ';
+  kEmptyPrefix = '  ';
 
 { TInitialize }
 
@@ -262,14 +263,18 @@ begin
 end;
 
 
-procedure TInitialize.ShowConfigStatus(Params : TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
-
+procedure TInitialize.ShowConfigStatus(Params : TInitializeParams; Paths: TStrings; CodeToolsOptions: TCodeToolsOptions);
+var
+  Profile: TClientProfile;
+  Feature: TClientFeature;
+  FeatureList, aPath: String;
 begin
   DoLog( kStatusPrefix+'Server: ' + {$INCLUDE %DATE%});
   DoLog( kStatusPrefix+'Client: ' + Params.clientInfo.name + ' ' + Params.clientInfo.version);
 
   DoLog( kStatusPrefix+'FPCPath: ' + CodeToolsOptions.FPCPath);
   DoLog( kStatusPrefix+'FPCSrcDir: ' + CodeToolsOptions.FPCSrcDir);
+  DoLog( kStatusPrefix+'LazarusSrcDir: ' + CodeToolsOptions.LazarusSrcDir);
   DoLog( kStatusPrefix+'TargetOS: ' + CodeToolsOptions.TargetOS);
   DoLog( kStatusPrefix+'TargetProcessor: '+ CodeToolsOptions.TargetProcessor);
 
@@ -295,18 +300,36 @@ begin
 
   // other settings
   DoLog(kStatusPrefix+'Settings:');
-  DoLog('maximumCompletions: %d', [ServerSettings.maximumCompletions]);
-  DoLog('  ► overloadPolicy: %s', [GetEnumName(TypeInfo(TOverloadPolicy),Ord(ServerSettings.overloadPolicy))]);
-  DoLog('  ► insertCompletionsAsSnippets: ', ServerSettings.insertCompletionsAsSnippets);
-  DoLog('  ► insertCompletionProcedureBrackets: ', ServerSettings.insertCompletionProcedureBrackets);
-  DoLog('  ► includeWorkspaceFoldersAsUnitPaths: ', ServerSettings.includeWorkspaceFoldersAsUnitPaths);
-  DoLog('  ► includeWorkspaceFoldersAsIncludePaths: ', ServerSettings.includeWorkspaceFoldersAsIncludePaths);
-  DoLog('  ► checkSyntax: ', ServerSettings.checkSyntax);
-  DoLog('  ► publishDiagnostics: ', ServerSettings.publishDiagnostics);
-  DoLog('  ► workspaceSymbols: ', ServerSettings.workspaceSymbols);
-  DoLog('  ► documentSymbols: ', ServerSettings.documentSymbols);
-  DoLog('  ► minimalisticCompletions: ', ServerSettings.minimalisticCompletions);
-  DoLog('  ► showSyntaxErrors: ', ServerSettings.showSyntaxErrors);
+  DoLog(kSettingPrefix+'maximumCompletions: %d', [ServerSettings.maximumCompletions]);
+  DoLog(kSettingPrefix+'overloadPolicy: %s', [GetEnumName(TypeInfo(TOverloadPolicy),Ord(ServerSettings.overloadPolicy))]);
+  DoLog(kSettingPrefix+'insertCompletionsAsSnippets: ', ServerSettings.insertCompletionsAsSnippets);
+  DoLog(kSettingPrefix+'insertCompletionProcedureBrackets: ', ServerSettings.insertCompletionProcedureBrackets);
+  DoLog(kSettingPrefix+'includeWorkspaceFoldersAsUnitPaths: ', ServerSettings.includeWorkspaceFoldersAsUnitPaths);
+  DoLog(kSettingPrefix+'includeWorkspaceFoldersAsIncludePaths: ', ServerSettings.includeWorkspaceFoldersAsIncludePaths);
+  DoLog(kSettingPrefix+'checkSyntax: ', ServerSettings.checkSyntax);
+  DoLog(kSettingPrefix+'publishDiagnostics: ', ServerSettings.publishDiagnostics);
+  DoLog(kSettingPrefix+'workspaceSymbols: ', ServerSettings.workspaceSymbols);
+  DoLog(kSettingPrefix+'documentSymbols: ', ServerSettings.documentSymbols);
+  DoLog(kSettingPrefix+'minimalisticCompletions: ', ServerSettings.minimalisticCompletions);
+  DoLog(kSettingPrefix+'showSyntaxErrors: ', ServerSettings.showSyntaxErrors);
+
+  // Show client profile
+  Profile := TClientProfile.Current;
+  if Profile.Features <> [] then
+    begin
+      FeatureList := '';
+      for Feature in Profile.Features do
+        begin
+          if FeatureList <> '' then
+            FeatureList := FeatureList + ', ';
+          FeatureList := FeatureList + FeatureToStr(Feature);
+        end;
+      DoLog(kStatusPrefix+'Client Features: ' + FeatureList);
+    end;
+
+  DoLog(kStatusPrefix+'Workspace paths (%d):',[Paths.Count]);
+  for aPath in Paths do
+    DoLog(kEmptyPrefix+'  %s',[aPath]);
 end;
 
 
@@ -384,6 +407,24 @@ begin
     ServerSettings.Assign(Params.initializationOptions);
     PasLS.Settings.ClientInfo.Assign(Params.ClientInfo);
 
+    // Select client profile based on client name
+    TClientProfile.SelectProfile(Params.ClientInfo.name);
+
+    // Apply user overrides from initializationOptions
+    if (ServerSettings.clientProfileEnableFeatures.Count > 0) or
+       (ServerSettings.clientProfileDisableFeatures.Count > 0) then
+      TClientProfile.ApplyOverrides(
+        ServerSettings.clientProfileEnableFeatures,
+        ServerSettings.clientProfileDisableFeatures);
+
+    // Detect hierarchical document symbol support
+    if Assigned(Params.capabilities) and
+       Assigned(Params.capabilities.textDocument) and
+       Assigned(Params.capabilities.textDocument.documentSymbol) then
+      SetClientCapabilities(Params.capabilities.textDocument.documentSymbol.hierarchicalDocumentSymbolSupport)
+    else
+      SetClientCapabilities(false);
+
     // replace macros in server settings
     Macros.Add('tmpdir', GetTempDir(true));
     Macros.Add('root', URIToPath(Params.rootUri));
@@ -395,8 +436,8 @@ begin
       CodeToolsOptions.ProjectDir := URIToPath(Params.rootURI);
 
     // print the root URI so we know which workspace folder is default
-    DoLog(kSettingprefix+'RootURI: '+Params.rootUri);
-    DoLog(kSettingprefix+'ProjectDir: '+CodeToolsOptions.ProjectDir);
+    DoLog(kStatusPrefix+'RootURI: '+Params.rootUri);
+    DoLog(kStatusPrefix+'ProjectDir: '+CodeToolsOptions.ProjectDir);
 
     {
       For more information on CodeTools see:
@@ -427,6 +468,7 @@ begin
     if ServerSettings.documentSymbols or ServerSettings.workspaceSymbols then
       begin
       SymbolManager := TSymbolManager.Create;
+      SymbolManager.Transport := Transport;
       Result.capabilities.documentSymbolProvider:=True;
       Result.capabilities.workspaceSymbolProvider := ServerSettings.CanProvideWorkspaceSymbols;
       end;
@@ -466,8 +508,7 @@ begin
 
     CheckProgramSetting;
 
-    ShowConfigStatus(Params,CodeToolsOptions);
-    DoLog(kSettingprefix+'Workspace paths (%d) : %s',[Paths.Count,Paths.DelimitedText]);
+    ShowConfigStatus(Params,Paths,CodeToolsOptions);
 
     with CodeToolBoss do
       begin

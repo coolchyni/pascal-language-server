@@ -20,6 +20,7 @@ uses
   PasLS.Symbols, PasLS.CheckInactiveRegions, PasLS.InactiveRegions, 
   PasLS.Command.RemoveUnusedUnits, PasLS.RemoveUnusedUnits, 
   LazarusPackageIntf;
+  PasLS.ClientProfile, LazarusPackageIntf;
 
 implementation
 

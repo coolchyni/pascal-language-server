@@ -9,24 +9,9 @@ Lazarus as backend.
 
 ## Features
 
-The implementation is still incomplete.
+To see the full list of implemented server capabilities in the current version use the command:
 
-### Implemented Methods
-
- - textDocument
-   - declaration
-   - implementation
-   - references
-   -  signatureHelp
-   - documentSymbol (only `SymbolInformation`)
-   - documentHighlight
-   - completion
- - window
-   - showMessage
- - workspace
-   - symbol
-   - executeCommand
-- diagnostics (incomplete)
+  `pasls -h`
 
 ### Extra commands to be executed with **executeCommand**:
 
@@ -41,26 +26,11 @@ The implementation is still incomplete.
 
 Editors can supply [initialization options](https://microsoft.github.io/language-server-protocol/specifications/specification-3-15/#initialize) to the server, however each client handles this differently so please refer to your editors LSP plugin for more information.
 
-The follow options are supported:
+To see the available list of options in the current version use the command:
 
-```json
-"initializationOptions":
-{
-  "fpcOptions":
-  [
-    "-Fu/path/to",
-    "-Fi/path/to",
-    "-dMY_MACRO"
-  ],
-  "symbolDatabase": "/path/to/symbols.db",
-  "program": "pasls.lpr"
-}
-```
+  `pasls -h`
 
- - `fpcOptions`: compiler flags used to specifiy paths, macros etc...
- - `symbolDatabase`:  if a valid path is provided the server will use an SQL database to store symbol information (recommended for faster documentSymbol queries).
- - `maximumCompletions`: the maximum number of completions returned per query. If the maximum is exceeded then `CompletionList.isIncomplete` will be set to true and results will be recomputed as the user types.
- - `overloadPolicy`: The preferred method to handle overloaded functions in document symbol requests.
+Clients should include these in their configuration files but you can verify they're up to date using `-h`.
 
 Macros are supported in initialization options. The following macros will be expanded:
 
@@ -73,34 +43,6 @@ The following macro formats are valid:
 - `$MACRO`
 - `$(macro)`
 - `$(MACRO)`
-
-### Optional Settings
-
-Boolean values used in *initializationOptions*.
-
-```json
-// procedure completions with parameters are inserted as snippets
-insertCompletionsAsSnippets
-// procedure completions with parameters (non-snippet) insert
-// empty brackets (and insert as snippet)
-insertCompletionProcedureBrackets
-// workspaces folders will be added to unit paths (i.e. -Fu)
-includeWorkspaceFoldersAsUnitPaths
-// workspaces folders will be added to include paths (i.e. -Fi)
-includeWorkspaceFoldersAsIncludePaths
-// syntax will be checked when file opens or saves
-checkSyntax
-// syntax errors will be published as diagnostics
-publishDiagnostics
-// enable workspace symbols
-workspaceSymbols
-// enable document symbols
-documentSymbols
-// completions contain a minimal amount of extra information
-minimalisticCompletions
-// syntax errors as shown in the UI with ‘window/showMessage’
-showSyntaxErrors
-```
 
 ## Clients
 

@@ -88,9 +88,30 @@ type
     property workspaceFolders: TWorkspaceFoldersServerCapabilities read fWorkspaceFolders write SetWorkspaceFolders;
   end;
 
+  { TDocumentSymbolClientCapabilities }
+
+  TDocumentSymbolClientCapabilities = class(TLSPStreamable)
+  private
+    fHierarchicalDocumentSymbolSupport: boolean;
+  Public
+    Procedure Assign(Source : TPersistent); override;
+  published
+    // The client supports hierarchical document symbols.
+    property hierarchicalDocumentSymbolSupport: boolean read fHierarchicalDocumentSymbolSupport write fHierarchicalDocumentSymbolSupport;
+  end;
+
   { TTextDocumentClientCapabilities }
 
   TTextDocumentClientCapabilities = class(TLSPStreamable)
+  private
+    fDocumentSymbol: TDocumentSymbolClientCapabilities;
+    procedure SetDocumentSymbol(AValue: TDocumentSymbolClientCapabilities);
+  Public
+    constructor Create; override;
+    destructor Destroy; override;
+    Procedure Assign(Source : TPersistent); override;
+  published
+    property documentSymbol: TDocumentSymbolClientCapabilities read fDocumentSymbol write SetDocumentSymbol;
   end;
 
   { TClientCapabilities }
@@ -139,6 +160,7 @@ type
     constructor Create; override;
     destructor destroy; override;
     Procedure Assign(Source : TPersistent); override;
+    class function GetPropertyDescription(const PropName: String): String;
   published
     property textDocumentSync: TTextDocumentSyncOptions read fTextDocumentSync write SetTextDocumentSync;
     property workspace: TWorkspaceServerCapabilities read fWorkspace write SetWorkspace;
@@ -158,6 +180,53 @@ type
   end;
 
 implementation
+
+{ TDocumentSymbolClientCapabilities }
+
+procedure TDocumentSymbolClientCapabilities.Assign(Source : TPersistent);
+var
+  Src : TDocumentSymbolClientCapabilities absolute Source;
+begin
+  if Source is TDocumentSymbolClientCapabilities then
+    begin
+    HierarchicalDocumentSymbolSupport := Src.HierarchicalDocumentSymbolSupport;
+    end
+  else
+    inherited Assign(Source);
+end;
+
+{ TTextDocumentClientCapabilities }
+
+procedure TTextDocumentClientCapabilities.SetDocumentSymbol(
+  AValue: TDocumentSymbolClientCapabilities);
+begin
+  if fDocumentSymbol=AValue then Exit;
+  fDocumentSymbol.Assign(AValue);
+end;
+
+constructor TTextDocumentClientCapabilities.Create;
+begin
+  Inherited;
+  fDocumentSymbol := TDocumentSymbolClientCapabilities.Create;
+end;
+
+destructor TTextDocumentClientCapabilities.Destroy;
+begin
+  FreeAndNil(fDocumentSymbol);
+  inherited Destroy;
+end;
+
+procedure TTextDocumentClientCapabilities.Assign(Source : TPersistent);
+var
+  Src : TTextDocumentClientCapabilities absolute Source;
+begin
+  if Source is TTextDocumentClientCapabilities then
+    begin
+    DocumentSymbol := Src.DocumentSymbol;
+    end
+  else
+    inherited Assign(Source);
+end;
 
 { TWorkspaceClientCapabilities }
 
@@ -369,6 +438,29 @@ begin
     end
   else
     inherited Assign(Source);
+end;
+
+class function TServerCapabilities.GetPropertyDescription(const PropName: String): String;
+begin
+  case PropName of
+    'textDocumentSync': Result := 'Document synchronization mode';
+    'workspace': Result := 'Workspace capabilities';
+    'completionProvider': Result := 'Code completion support';
+    'hoverProvider': Result := 'Hover information support';
+    'definitionProvider': Result := 'Go to definition support';
+    'declarationProvider': Result := 'Go to declaration support';
+    'referencesProvider': Result := 'Find all references support';
+    'implementationProvider': Result := 'Go to implementation support';
+    'codeActionProvider': Result := 'Code action support';
+    'documentHighlightProvider': Result := 'Document highlight support';
+    'documentSymbolProvider': Result := 'Document symbols support';
+    'workspaceSymbolProvider': Result := 'Workspace symbols support';
+    'signatureHelpProvider': Result := 'Signature help support';
+    'executeCommandProvider': Result := 'Execute command support';
+    'inlayHintProvider': Result := 'Inlay hints support';
+    else
+      Result := '';
+  end;
 end;
 
 end.

@@ -81,7 +81,6 @@ end;
 function TWorkspaceSymbolRequest.DoExecute(const Params: TJSONData; AContext: TJSONRPCCallContext): TJSONData;
 var
   Input: TWorkspaceSymbolParams;
-
 begin
   Input := specialize TLSPStreaming<TWorkspaceSymbolParams>.ToObject(Params);
   Result := SymbolManager.FindWorkspaceSymbols(Input.query);
