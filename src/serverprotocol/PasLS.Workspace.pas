@@ -83,9 +83,13 @@ var
   Input: TWorkspaceSymbolParams;
 begin
   Input := specialize TLSPStreaming<TWorkspaceSymbolParams>.ToObject(Params);
-  Result := SymbolManager.FindWorkspaceSymbols(Input.query);
-  if not Assigned(Result) then
-    Result := TJSONNull.Create;
+  try
+    Result := SymbolManager.FindWorkspaceSymbols(Input.query);
+    if not Assigned(Result) then
+      Result := TJSONNull.Create;
+  finally
+    Input.Free;
+  end;
 end;
 
 { TDidChangeConfiguration }

@@ -4,7 +4,7 @@ program testlsp;
 
 uses
   Classes, consoletestrunner, Tests.Basic, Tests.ClientProfile, Tests.DocumentSymbol,
-  Tests.SublimeProfile;
+  Tests.SublimeProfile, Tests.SymbolPersistence, Tests.WorkspaceSymbol;
 
 type
 

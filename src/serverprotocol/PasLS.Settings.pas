@@ -273,9 +273,15 @@ end;
 
 function TServerSettings.CanProvideWorkspaceSymbols: boolean;
 begin
-  result := workspaceSymbols and
-            (symbolDatabase <> '') and
-            FileExists(ExpandFileName(symbolDatabase));
+  //result := workspaceSymbols and
+  //          (symbolDatabase <> '') and
+  //          FileExists(ExpandFileName(symbolDatabase));
+
+  // Fixed the format issue of CollectSerializedSymbols, returning results in
+  // the SymboleInformation[] format. As a result, the usage conditions for
+  // the workspaceSymbols function can be relaxed, allowing its use without
+  // database.
+  result := workspaceSymbols;
 end;
 
 class function TServerSettings.GetPropertyDescription(const PropName: String): String;

@@ -115,9 +115,11 @@ var
   F: TextFile;
   ExistingBuffer: TCodeBuffer;
 begin
+  // Use GetTempFileName for guaranteed unique filename
   FTestFile := GetTempFileName('', 'testunit');
   FTestFile := ChangeFileExt(FTestFile, '.pas');
 
+  // Create file on disk
   AssignFile(F, FTestFile);
   try
     Rewrite(F);
@@ -126,16 +128,26 @@ begin
     CloseFile(F);
   end;
 
+  // Force CodeToolBoss to reload from disk if buffer already exists
+  // This is necessary because CodeToolBoss may have stale buffers from previous tests
   ExistingBuffer := CodeToolBoss.FindFile(FTestFile);
   if ExistingBuffer <> nil then
     ExistingBuffer.Revert;
+
+  // Load via CodeToolBoss
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
 end;
 
 procedure TTestSublimeProfile.CleanupTestFile;
 begin
-  if FileExists(FTestFile) then
-    DeleteFile(FTestFile);
-  FTestFile := '';
+  // Just delete the file - SymbolManager should be freed first in TearDown
+  FTestCode := nil;
+  if FTestFile <> '' then
+  begin
+    if FileExists(FTestFile) then
+      DeleteFile(FTestFile);
+    FTestFile := '';
+  end;
 end;
 
 procedure TTestSublimeProfile.SetUp;
@@ -146,12 +158,19 @@ begin
 
   if SymbolManager = nil then
     SymbolManager := TSymbolManager.Create;
+
+  // Reset capabilities to known state before each test
+  SetClientCapabilities(True);
+  // Each test sets its own profile via TClientProfile.SelectProfile
 end;
 
 procedure TTestSublimeProfile.TearDown;
 begin
   CleanupTestFile;
-  TClientProfile.SelectProfile('');  // Reset to default
+  FTestCode := nil;
+  // Reset client profile and capabilities for next test suite
+  TClientProfile.SelectProfile('');
+  SetClientCapabilities(False);
   inherited TearDown;
 end;
 
@@ -219,7 +238,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -237,7 +255,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -255,7 +272,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -279,7 +295,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -299,7 +314,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -322,7 +336,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -349,7 +362,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -387,7 +399,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -419,7 +430,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -445,7 +455,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -470,7 +479,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -495,7 +503,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -524,7 +531,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -548,7 +554,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -571,7 +576,6 @@ var
 begin
   // Compare Sublime profile output with Default profile
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
 
   // Get Sublime profile symbols
@@ -613,7 +617,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -637,7 +640,6 @@ begin
   TClientProfile.SelectProfile('Sublime Text LSP');
 
   CreateTestFile(TEST_SUBLIME_UNIT);
-  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
   AssertNotNull('Code buffer should be loaded', FTestCode);
   SymbolManager.Reload(FTestCode, True);
   RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;

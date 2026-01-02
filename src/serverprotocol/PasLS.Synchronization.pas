@@ -101,17 +101,19 @@ end;
 
 procedure TDidCloseTextDocument.Process(var Params : TDidCloseTextDocumentParams);
 var
-  FileName: String;
+  FileName, FullPath: String;
 begin
-  with Params do
-  begin
-    // Clean up symbol table entry and database records when file is closed
-    if SymbolManager <> nil then
-    begin
-      FileName := ExtractFileName(textDocument.LocalPath);
-      SymbolManager.RemoveFile(FileName);
-    end;
-  end;
+  if SymbolManager = nil then
+    Exit;
+
+  FullPath := Params.textDocument.LocalPath;
+  FileName := ExtractFileName(FullPath);
+
+  // Distinguish between workspace files and external files
+  if SymbolManager.IsFileInWorkspace(FullPath) then
+    SymbolManager.UnloadFile(FileName)   // Keep database symbols
+  else
+    SymbolManager.RemoveFile(FileName);  // Remove database symbols
 end;
 
 
@@ -120,15 +122,26 @@ end;
 procedure TDidSaveTextDocument.Process(var Params : TDidSaveTextDocumentParams);
 var
   Code: TCodeBuffer;
+  FullPath: String;
 begin
+  FullPath := Params.textDocument.LocalPath;
+  Code := CodeToolBoss.FindFile(FullPath);
 
-  Code := CodeToolBoss.FindFile(Params.textDocument.LocalPath);
+  if Code = nil then
+    Exit;
+
   if SymbolManager <> nil then
+  begin
+    // Always mark as modified
     SymbolManager.FileModified(Code);
-  DiagnosticsHandler.CheckSyntax(Transport,Code);
-  CheckInactiveRegions(Transport, Code, Params.textDocument.uri);
-  // ClearDiagnostics(Transport,Code);
 
+    // Proactively update database for workspace files
+    if SymbolManager.IsFileInWorkspace(FullPath) then
+      SymbolManager.Reload(Code, True);  // Force reload and DB update
+  end;
+
+  DiagnosticsHandler.CheckSyntax(Transport, Code);
+  CheckInactiveRegions(Transport, Code, Params.textDocument.uri);
 end;
 
 
