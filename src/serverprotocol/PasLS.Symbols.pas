@@ -129,6 +129,8 @@ type
     function AddStruct(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddEnum(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddTypeAlias(Node: TCodeTreeNode; const Name: String): TSymbol;
+    function AddConstant(Node: TCodeTreeNode; const Name: String): TSymbol;
+    function AddVariable(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddProperty(Node: TCodeTreeNode; const AClassName, APropertyName: String): TSymbol;
     function AddField(Node: TCodeTreeNode; const AClassName, AFieldName: String): TSymbol;
     // Add nested function as child of parent
@@ -700,6 +702,54 @@ begin
         SetNodeRange(TypeSymbol, Node);
         // Also add to flat symbol list for database/workspace symbol
         Result := AddFlatSymbol(Node, Name, TSymbolKind._TypeParameter);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddConstant(Node: TCodeTreeNode; const Name: String): TSymbol;
+var
+  ConstSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: add constant to Entry.Symbols
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Constant);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: Add constant to current container
+        ConstSymbol := TDocumentSymbolEx.Create(GetCurrentContainer);
+        ConstSymbol.name := Name;
+        ConstSymbol.kind := TSymbolKind._Constant;
+        SetNodeRange(ConstSymbol, Node);
+        // Also add to flat symbol list for database/workspace symbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Constant);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddVariable(Node: TCodeTreeNode; const Name: String): TSymbol;
+var
+  VarSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: add variable to Entry.Symbols
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Variable);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: Add variable to current container
+        VarSymbol := TDocumentSymbolEx.Create(GetCurrentContainer);
+        VarSymbol.name := Name;
+        VarSymbol.kind := TSymbolKind._Variable;
+        SetNodeRange(VarSymbol, Node);
+        // Also add to flat symbol list for database/workspace symbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Variable);
       end;
   end;
 end;
@@ -1339,8 +1389,9 @@ var
   Symbol, MethodSymbol, LastClassSymbol: TSymbol;
   Child: TCodeTreeNode;
   Scanner: TLinkScanner;
-  LinkIndex: Integer;
-  IsImplementation:Boolean;
+  LinkIndex, i: Integer;
+  IsImplementation: Boolean;
+  ConstName, VarName: String;
 begin
   IsImplementation:=(Node.Parent<>nil) and  (Node.Parent.Desc=ctnImplementation);
   LastClassSymbol:=nil;
@@ -1395,20 +1446,43 @@ begin
 
       case Node.Desc of
 
+        ctnConstSection:
+          begin
+            Inc(IndentLevel);
+            Child := Node.FirstChild;
+            while Child <> nil do
+              begin
+                if Child.Desc = ctnConstDefinition then
+                  begin
+                    ConstName := GetIdentifierAtPos(Tool, Child.StartPos, true, true);
+                    Builder.AddConstant(Child, ConstName);
+                    PrintNodeDebug(Child);
+                  end;
+                Child := Child.NextBrother;
+              end;
+            Dec(IndentLevel);
+          end;
 
-        // todo: make constants an option?
-        //ctnConstSection:
-        //  begin
-        //    Inc(IndentLevel);
-        //    Child := Node.FirstChild;
-        //    while Child <> nil do
-        //      begin
-        //        AddSymbol(Child, TSymbolKind._Constant);
-        //        PrintNodeDebug(Child);
-        //        Child := Child.NextBrother;
-        //      end;
-        //    Dec(IndentLevel);
-        //  end;
+        ctnVarSection:
+          begin
+            Inc(IndentLevel);
+            Child := Node.FirstChild;
+            while Child <> nil do
+              begin
+                if Child.Desc = ctnVarDefinition then
+                  begin
+                    VarName := GetIdentifierAtPos(Tool, Child.StartPos, true, true);
+                    // Remove trailing colon if present (similar to field names)
+                    i := Pos(':', VarName);
+                    if i > 0 then
+                      VarName := Copy(VarName, 1, i - 1);
+                    Builder.AddVariable(Child, VarName);
+                    PrintNodeDebug(Child);
+                  end;
+                Child := Child.NextBrother;
+              end;
+            Dec(IndentLevel);
+          end;
 
         ctnTypeSection:
           begin

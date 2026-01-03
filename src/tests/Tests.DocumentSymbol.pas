@@ -40,6 +40,10 @@ type
     procedure TestEnumSymbolsFlat;
     procedure TestTypeAliasSymbolsHierarchical;
     procedure TestTypeAliasSymbolsFlat;
+    procedure TestConstantSymbolsHierarchical;
+    procedure TestConstantSymbolsFlat;
+    procedure TestGlobalVarSymbolsHierarchical;
+    procedure TestGlobalVarSymbolsFlat;
   end;
 
 implementation
@@ -124,6 +128,65 @@ const
     '  end;' + LineEnding +
     '' + LineEnding +
     'implementation' + LineEnding +
+    '' + LineEnding +
+    'procedure TMyClass.DoSomething;' + LineEnding +
+    'begin' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    'end.';
+
+  // Test file with constants for testing constant symbol extraction
+  TEST_UNIT_WITH_CONSTANTS =
+    'unit TestConstUnit;' + LineEnding +
+    '' + LineEnding +
+    '{$mode objfpc}{$H+}' + LineEnding +
+    '' + LineEnding +
+    'interface' + LineEnding +
+    '' + LineEnding +
+    'const' + LineEnding +
+    '  MAX_SIZE = 100;' + LineEnding +
+    '  DEFAULT_NAME = ''Test'';' + LineEnding +
+    '  PI_VALUE = 3.14159;' + LineEnding +
+    '' + LineEnding +
+    'type' + LineEnding +
+    '  TMyClass = class' + LineEnding +
+    '  public' + LineEnding +
+    '    procedure DoSomething;' + LineEnding +
+    '  end;' + LineEnding +
+    '' + LineEnding +
+    'implementation' + LineEnding +
+    '' + LineEnding +
+    'const' + LineEnding +
+    '  IMPL_CONST = 42;' + LineEnding +
+    '' + LineEnding +
+    'procedure TMyClass.DoSomething;' + LineEnding +
+    'begin' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    'end.';
+
+  // Test file with global variables for testing variable symbol extraction
+  TEST_UNIT_WITH_GLOBAL_VARS =
+    'unit TestVarUnit;' + LineEnding +
+    '' + LineEnding +
+    '{$mode objfpc}{$H+}' + LineEnding +
+    '' + LineEnding +
+    'interface' + LineEnding +
+    '' + LineEnding +
+    'var' + LineEnding +
+    '  GlobalCounter: Integer;' + LineEnding +
+    '  AppName: String;' + LineEnding +
+    '' + LineEnding +
+    'type' + LineEnding +
+    '  TMyClass = class' + LineEnding +
+    '  public' + LineEnding +
+    '    procedure DoSomething;' + LineEnding +
+    '  end;' + LineEnding +
+    '' + LineEnding +
+    'implementation' + LineEnding +
+    '' + LineEnding +
+    'var' + LineEnding +
+    '  ImplVar: Integer;' + LineEnding +
     '' + LineEnding +
     'procedure TMyClass.DoSomething;' + LineEnding +
     'begin' + LineEnding +
@@ -1710,6 +1773,154 @@ begin
   AssertTrue('JSON should contain TMyProc', Pos('"TMyProc"', RawJSON) > 0);
   AssertTrue('JSON should contain TMyArray', Pos('"TMyArray"', RawJSON) > 0);
   AssertTrue('Should have TypeParameter kind (26)', Pos('"kind" : 26', RawJSON) > 0);
+
+  // Verify class also exists (to confirm other symbols still work)
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestConstantSymbolsHierarchical;
+var
+  RawJSON: String;
+begin
+  // This test verifies that constants appear in hierarchical mode
+
+  // Set hierarchical mode
+  SetClientCapabilities(True);
+
+  // Create test file with constants
+  CreateTestFile(TEST_UNIT_WITH_CONSTANTS);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify constant symbols are present (kind 14 = Constant)
+  AssertTrue('JSON should contain MAX_SIZE', Pos('"MAX_SIZE"', RawJSON) > 0);
+  AssertTrue('JSON should contain DEFAULT_NAME', Pos('"DEFAULT_NAME"', RawJSON) > 0);
+  AssertTrue('JSON should contain PI_VALUE', Pos('"PI_VALUE"', RawJSON) > 0);
+  AssertTrue('JSON should contain IMPL_CONST', Pos('"IMPL_CONST"', RawJSON) > 0);
+  AssertTrue('Should have Constant kind (14)', Pos('"kind" : 14', RawJSON) > 0);
+
+  // Verify hierarchical structure (children array should exist)
+  AssertTrue('Should have children in hierarchical mode', Pos('"children"', RawJSON) > 0);
+
+  // Verify class also exists (to confirm other symbols still work)
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestConstantSymbolsFlat;
+var
+  RawJSON: String;
+begin
+  // This test verifies that constants appear in flat mode
+
+  // Set flat mode
+  SetClientCapabilities(False);
+
+  // Create test file with constants
+  CreateTestFile(TEST_UNIT_WITH_CONSTANTS);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify constant symbols are present (kind 14 = Constant)
+  AssertTrue('JSON should contain MAX_SIZE', Pos('"MAX_SIZE"', RawJSON) > 0);
+  AssertTrue('JSON should contain DEFAULT_NAME', Pos('"DEFAULT_NAME"', RawJSON) > 0);
+  AssertTrue('JSON should contain PI_VALUE', Pos('"PI_VALUE"', RawJSON) > 0);
+  AssertTrue('JSON should contain IMPL_CONST', Pos('"IMPL_CONST"', RawJSON) > 0);
+  AssertTrue('Should have Constant kind (14)', Pos('"kind" : 14', RawJSON) > 0);
+
+  // Verify class also exists (to confirm other symbols still work)
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestGlobalVarSymbolsHierarchical;
+var
+  RawJSON: String;
+begin
+  // This test verifies that global variables appear in hierarchical mode
+
+  // Set hierarchical mode
+  SetClientCapabilities(True);
+
+  // Create test file with global variables
+  CreateTestFile(TEST_UNIT_WITH_GLOBAL_VARS);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify variable symbols are present (kind 13 = Variable)
+  AssertTrue('JSON should contain GlobalCounter', Pos('"GlobalCounter"', RawJSON) > 0);
+  AssertTrue('JSON should contain AppName', Pos('"AppName"', RawJSON) > 0);
+  AssertTrue('JSON should contain ImplVar', Pos('"ImplVar"', RawJSON) > 0);
+  AssertTrue('Should have Variable kind (13)', Pos('"kind" : 13', RawJSON) > 0);
+
+  // Verify hierarchical structure (children array should exist)
+  AssertTrue('Should have children in hierarchical mode', Pos('"children"', RawJSON) > 0);
+
+  // Verify class also exists (to confirm other symbols still work)
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestGlobalVarSymbolsFlat;
+var
+  RawJSON: String;
+begin
+  // This test verifies that global variables appear in flat mode
+
+  // Set flat mode
+  SetClientCapabilities(False);
+
+  // Create test file with global variables
+  CreateTestFile(TEST_UNIT_WITH_GLOBAL_VARS);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify variable symbols are present (kind 13 = Variable)
+  AssertTrue('JSON should contain GlobalCounter', Pos('"GlobalCounter"', RawJSON) > 0);
+  AssertTrue('JSON should contain AppName', Pos('"AppName"', RawJSON) > 0);
+  AssertTrue('JSON should contain ImplVar', Pos('"ImplVar"', RawJSON) > 0);
+  AssertTrue('Should have Variable kind (13)', Pos('"kind" : 13', RawJSON) > 0);
 
   // Verify class also exists (to confirm other symbols still work)
   AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
