@@ -36,6 +36,10 @@ type
     procedure TestMethodSelectionRangePointsToName;
     procedure TestHierarchicalModeFullValidation;
     procedure TestFlatModeFullValidation;
+    procedure TestEnumSymbolsHierarchical;
+    procedure TestEnumSymbolsFlat;
+    procedure TestTypeAliasSymbolsHierarchical;
+    procedure TestTypeAliasSymbolsFlat;
   end;
 
 implementation
@@ -70,6 +74,59 @@ const
     'function TUser.GetFullName: String;' + LineEnding +
     'begin' + LineEnding +
     '  Result := FName;' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    'end.';
+
+  // Test file with enum type for testing enum symbol extraction
+  TEST_UNIT_WITH_ENUM =
+    'unit TestEnumUnit;' + LineEnding +
+    '' + LineEnding +
+    '{$mode objfpc}{$H+}' + LineEnding +
+    '' + LineEnding +
+    'interface' + LineEnding +
+    '' + LineEnding +
+    'type' + LineEnding +
+    '  TColor = (clRed, clGreen, clBlue);' + LineEnding +
+    '  TStatus = (stPending, stActive, stDone);' + LineEnding +
+    '' + LineEnding +
+    '  TMyClass = class' + LineEnding +
+    '  public' + LineEnding +
+    '    procedure DoSomething;' + LineEnding +
+    '  end;' + LineEnding +
+    '' + LineEnding +
+    'implementation' + LineEnding +
+    '' + LineEnding +
+    'procedure TMyClass.DoSomething;' + LineEnding +
+    'begin' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    'end.';
+
+  // Test file with type aliases for testing type alias symbol extraction
+  TEST_UNIT_WITH_TYPE_ALIAS =
+    'unit TestTypeAliasUnit;' + LineEnding +
+    '' + LineEnding +
+    '{$mode objfpc}{$H+}' + LineEnding +
+    '' + LineEnding +
+    'interface' + LineEnding +
+    '' + LineEnding +
+    'type' + LineEnding +
+    '  TMyInteger = Integer;' + LineEnding +
+    '  PInteger = ^Integer;' + LineEnding +
+    '  TMySet = set of Byte;' + LineEnding +
+    '  TMyProc = procedure(X: Integer);' + LineEnding +
+    '  TMyArray = array[0..10] of Integer;' + LineEnding +
+    '' + LineEnding +
+    '  TMyClass = class' + LineEnding +
+    '  public' + LineEnding +
+    '    procedure DoSomething;' + LineEnding +
+    '  end;' + LineEnding +
+    '' + LineEnding +
+    'implementation' + LineEnding +
+    '' + LineEnding +
+    'procedure TMyClass.DoSomething;' + LineEnding +
+    'begin' + LineEnding +
     'end;' + LineEnding +
     '' + LineEnding +
     'end.';
@@ -1506,6 +1563,156 @@ begin
   finally
     JSONData.Free;
   end;
+end;
+
+procedure TTestDocumentSymbol.TestEnumSymbolsHierarchical;
+var
+  RawJSON: String;
+begin
+  // This test verifies that enum types appear in hierarchical mode
+  // (Bug: enums were bypassing TSymbolBuilder, missing from hierarchical output)
+
+  // Set hierarchical mode
+  SetClientCapabilities(True);
+
+  // Create test file with enum types
+  CreateTestFile(TEST_UNIT_WITH_ENUM);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify enum symbols are present (kind 10 = Enum)
+  AssertTrue('JSON should contain TColor enum', Pos('"TColor"', RawJSON) > 0);
+  AssertTrue('JSON should contain TStatus enum', Pos('"TStatus"', RawJSON) > 0);
+  AssertTrue('Should have Enum kind (10)', Pos('"kind" : 10', RawJSON) > 0);
+
+  // Verify hierarchical structure (children array should exist)
+  AssertTrue('Should have children in hierarchical mode', Pos('"children"', RawJSON) > 0);
+
+  // Verify class also exists (to confirm other symbols still work)
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestEnumSymbolsFlat;
+var
+  RawJSON: String;
+begin
+  // This test verifies that enum types appear in flat mode
+
+  // Set flat mode
+  SetClientCapabilities(False);
+
+  // Create test file with enum types
+  CreateTestFile(TEST_UNIT_WITH_ENUM);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify enum symbols are present (kind 10 = Enum)
+  AssertTrue('JSON should contain TColor enum', Pos('"TColor"', RawJSON) > 0);
+  AssertTrue('JSON should contain TStatus enum', Pos('"TStatus"', RawJSON) > 0);
+  AssertTrue('Should have Enum kind (10)', Pos('"kind" : 10', RawJSON) > 0);
+
+  // Verify class also exists (to confirm other symbols still work)
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestTypeAliasSymbolsHierarchical;
+var
+  RawJSON: String;
+begin
+  // This test verifies that type aliases appear in hierarchical mode
+  // (Bug: type aliases were bypassing TSymbolBuilder, missing from hierarchical output)
+
+  // Set hierarchical mode
+  SetClientCapabilities(True);
+
+  // Create test file with type alias types
+  CreateTestFile(TEST_UNIT_WITH_TYPE_ALIAS);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify type alias symbols are present (kind 26 = TypeParameter)
+  AssertTrue('JSON should contain TMyInteger', Pos('"TMyInteger"', RawJSON) > 0);
+  AssertTrue('JSON should contain PInteger', Pos('"PInteger"', RawJSON) > 0);
+  AssertTrue('JSON should contain TMySet', Pos('"TMySet"', RawJSON) > 0);
+  AssertTrue('JSON should contain TMyProc', Pos('"TMyProc"', RawJSON) > 0);
+  AssertTrue('JSON should contain TMyArray', Pos('"TMyArray"', RawJSON) > 0);
+  AssertTrue('Should have TypeParameter kind (26)', Pos('"kind" : 26', RawJSON) > 0);
+
+  // Verify hierarchical structure (children array should exist)
+  AssertTrue('Should have children in hierarchical mode', Pos('"children"', RawJSON) > 0);
+
+  // Verify class also exists (to confirm other symbols still work)
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestTypeAliasSymbolsFlat;
+var
+  RawJSON: String;
+begin
+  // This test verifies that type aliases appear in flat mode
+
+  // Set flat mode
+  SetClientCapabilities(False);
+
+  // Create test file with type alias types
+  CreateTestFile(TEST_UNIT_WITH_TYPE_ALIAS);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify type alias symbols are present (kind 26 = TypeParameter)
+  AssertTrue('JSON should contain TMyInteger', Pos('"TMyInteger"', RawJSON) > 0);
+  AssertTrue('JSON should contain PInteger', Pos('"PInteger"', RawJSON) > 0);
+  AssertTrue('JSON should contain TMySet', Pos('"TMySet"', RawJSON) > 0);
+  AssertTrue('JSON should contain TMyProc', Pos('"TMyProc"', RawJSON) > 0);
+  AssertTrue('JSON should contain TMyArray', Pos('"TMyArray"', RawJSON) > 0);
+  AssertTrue('Should have TypeParameter kind (26)', Pos('"kind" : 26', RawJSON) > 0);
+
+  // Verify class also exists (to confirm other symbols still work)
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
 end;
 
 initialization

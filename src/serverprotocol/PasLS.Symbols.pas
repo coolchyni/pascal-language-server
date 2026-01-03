@@ -127,6 +127,8 @@ type
     function AddMethod(Node: TCodeTreeNode; const AClassName, AMethodName: String): TSymbol;
     function AddGlobalFunction(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddStruct(Node: TCodeTreeNode; const Name: String): TSymbol;
+    function AddEnum(Node: TCodeTreeNode; const Name: String): TSymbol;
+    function AddTypeAlias(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddProperty(Node: TCodeTreeNode; const AClassName, APropertyName: String): TSymbol;
     function AddField(Node: TCodeTreeNode; const AClassName, AFieldName: String): TSymbol;
     // Add nested function as child of parent
@@ -654,6 +656,54 @@ begin
   end;
 end;
 
+function TSymbolBuilder.AddEnum(Node: TCodeTreeNode; const Name: String): TSymbol;
+var
+  EnumSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: add enum to Entry.Symbols
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Enum);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: Add enum to current container
+        EnumSymbol := TDocumentSymbolEx.Create(GetCurrentContainer);
+        EnumSymbol.name := Name;
+        EnumSymbol.kind := TSymbolKind._Enum;
+        SetNodeRange(EnumSymbol, Node);
+        // Also add to flat symbol list for database/workspace symbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._Enum);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddTypeAlias(Node: TCodeTreeNode; const Name: String): TSymbol;
+var
+  TypeSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: add type alias to Entry.Symbols
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._TypeParameter);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: Add type alias to current container
+        TypeSymbol := TDocumentSymbolEx.Create(GetCurrentContainer);
+        TypeSymbol.name := Name;
+        TypeSymbol.kind := TSymbolKind._TypeParameter;
+        SetNodeRange(TypeSymbol, Node);
+        // Also add to flat symbol list for database/workspace symbol
+        Result := AddFlatSymbol(Node, Name, TSymbolKind._TypeParameter);
+      end;
+  end;
+end;
+
 function TSymbolBuilder.AddProperty(Node: TCodeTreeNode; const AClassName, APropertyName: String): TSymbol;
 var
   ClassSymbol: TDocumentSymbolEx;
@@ -1163,7 +1213,8 @@ begin
           end;
         ctnEnumerationType:
           begin
-            AddSymbol(TypeDefNode, TSymbolKind._Enum);
+            TypeName := CleanTypeName(GetIdentifierAtPos(Tool, TypeDefNode.StartPos, true, true));
+            Builder.AddEnum(TypeDefNode, TypeName);
             Child := Node.FirstChild;
             while Child <> nil do
               begin
@@ -1175,7 +1226,8 @@ begin
           end;
         otherwise
           begin
-            AddSymbol(TypeDefNode, TSymbolKind._TypeParameter);
+            TypeName := CleanTypeName(GetIdentifierAtPos(Tool, TypeDefNode.StartPos, true, true));
+            Builder.AddTypeAlias(TypeDefNode, TypeName);
           end;
       end;
 
