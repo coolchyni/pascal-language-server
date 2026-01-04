@@ -1798,17 +1798,26 @@ procedure TSymbolManager.Scan(Path: String; SearchSubDirs: Boolean);
 var
   Files: TStringList;
   FileName: String;
+  Patterns: String;
+  I: Integer;
 begin
+  // Convert TStrings to semicolon-delimited string for FindAllFiles
+  Patterns := '';
+  for I := 0 to ServerSettings.scanFilePatterns.Count - 1 do
+  begin
+    if I > 0 then
+      Patterns := Patterns + ';';
+    Patterns := Patterns + ServerSettings.scanFilePatterns[I];
+  end;
+
   Files := TStringList.Create;
   try
-    // TODO: make this an initializationOption
-    FindAllFiles(Files, Path, '*.pas;*.pp;*.p', SearchSubDirs);
+    FindAllFiles(Files, Path, Patterns, SearchSubDirs);
     for FileName in Files do
       Reload(FileName);
   finally
     Files.Free;
   end;
-
 end;
 
 //type
