@@ -76,6 +76,11 @@ begin
 
   Transport.SendDiagnostic(' ✅ Sucesss NewX: %d NewY: %d NewTopLine: %d BlockTopLine: %d BlockBottomLine: %d', [NewX, NewY, NewTopLine, BlockTopLine, BlockBottomLine]);
   //procedure AbsoluteToLineCol(Position: integer; out Line, Column: integer);
+  if Code.Count< 1 then
+    begin
+    Transport.SendDiagnostic( '🔴 CompleteCode Resulting Code is empty');
+    Exit;
+    end;
   With Code[Code.Count - 1] do
     Transport.SendDiagnostic( 'Position: %d : %d - Length: %d', [Position, Code.GetLineStart(Position),Len]);
   // TODO: we need to get character offsets and get the text out of the source

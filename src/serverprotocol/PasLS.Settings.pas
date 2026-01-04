@@ -53,10 +53,12 @@ type
     fMaximumCompletions: Integer;
     fOverloadPolicy: TOverloadPolicy;
     fConfig: String;
+    fScanFilePatterns: TStrings;
     fClientProfileEnableFeatures: TStrings;
     fClientProfileDisableFeatures: TStrings;
     procedure SetFPCOptions(AValue: TStrings);
     procedure SetExcludeWorkspaceFolders(AValue: TStrings);
+    procedure SetScanFilePatterns(AValue: TStrings);
     procedure SetClientProfileEnableFeatures(AValue: TStrings);
     procedure SetClientProfileDisableFeatures(AValue: TStrings);
   published
@@ -101,6 +103,8 @@ type
     property ignoreTextCompletions: Boolean read fBooleans[10] write fBooleans[10];
     // config file or directory to read settings from (will support multiple formats)
     property config: String read fConfig write fConfig;
+    // File patterns for workspace scanning (array of glob patterns)
+    property scanFilePatterns: TStrings read fScanFilePatterns write SetScanFilePatterns;
     // Check inactive regions
     property checkInactiveRegions : Boolean read fBooleans[11] write fBooleans[11];
     // Client profile feature overrides
@@ -240,6 +244,7 @@ begin
     MaximumCompletions:=Src.MaximumCompletions;
     OverloadPolicy:=Src.OverloadPolicy;
     Config:=Src.Config;
+    ScanFilePatterns:=Src.ScanFilePatterns;
     ClientProfileEnableFeatures := Src.ClientProfileEnableFeatures;
     ClientProfileDisableFeatures := Src.ClientProfileDisableFeatures;
     end
@@ -257,6 +262,12 @@ procedure TServerSettings.SetExcludeWorkspaceFolders(AValue: TStrings);
 begin
   if fExcludeWorkspaceFolders=AValue then Exit;
   fExcludeWorkspaceFolders.Assign(AValue);
+end;
+
+procedure TServerSettings.SetScanFilePatterns(AValue: TStrings);
+begin
+  if fScanFilePatterns = AValue then Exit;
+  fScanFilePatterns.Assign(AValue);
 end;
 
 procedure TServerSettings.SetClientProfileEnableFeatures(AValue: TStrings);
@@ -300,6 +311,7 @@ begin
     'showSyntaxErrors': Result := 'Syntax errors as shown in the UI with ''window/showMessage''';
     'ignoreTextCompletions': Result := 'Ignores completion items like "begin" and "var"';
     'config': Result := 'Config file or directory to read settings from';
+    'scanFilePatterns': Result := 'File patterns for workspace scanning (array of glob patterns, e.g. ["*.pas", "*.pp"])';
     'checkInactiveRegions': Result := 'Check inactive regions';
     'clientProfileEnableFeatures': Result := 'List of features to force-enable regardless of client profile';
     'clientProfileDisableFeatures': Result := 'List of features to force-disable regardless of client profile';
@@ -314,6 +326,7 @@ begin
 
   fFPCOptions := TStringList.Create;
   fExcludeWorkspaceFolders := TStringList.Create;
+  fScanFilePatterns := TStringList.Create;
   fClientProfileEnableFeatures := TStringList.Create;
   fClientProfileDisableFeatures := TStringList.Create;
 
@@ -321,6 +334,13 @@ begin
   symbolDatabase := '';
   maximumCompletions := 200;
   overloadPolicy := TOverloadPolicy.Suffix;
+  // default file patterns for workspace scanning
+  fScanFilePatterns.Add('*.pas');
+  fScanFilePatterns.Add('*.pp');
+  fScanFilePatterns.Add('*.p');
+  fScanFilePatterns.Add('*.inc');
+  fScanFilePatterns.Add('*.lpr');
+  fScanFilePatterns.Add('*.dpr');
 
   // options
   insertCompletionsAsSnippets := true;
@@ -342,6 +362,7 @@ destructor TServerSettings.Destroy;
 begin
   FreeAndNil(fFPCOptions);
   FreeAndNil(fExcludeWorkspaceFolders);
+  FreeAndNil(fScanFilePatterns);
   FreeAndNil(fClientProfileEnableFeatures);
   FreeAndNil(fClientProfileDisableFeatures);
   inherited Destroy;
