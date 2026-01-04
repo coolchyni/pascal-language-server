@@ -44,6 +44,8 @@ type
     procedure TestConstantSymbolsFlat;
     procedure TestGlobalVarSymbolsHierarchical;
     procedure TestGlobalVarSymbolsFlat;
+    procedure TestClassConstantSymbolsHierarchical;
+    procedure TestClassConstantSymbolsFlat;
   end;
 
 implementation
@@ -187,6 +189,32 @@ const
     '' + LineEnding +
     'var' + LineEnding +
     '  ImplVar: Integer;' + LineEnding +
+    '' + LineEnding +
+    'procedure TMyClass.DoSomething;' + LineEnding +
+    'begin' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    'end.';
+
+  // Test file with class constants for testing class constant symbol extraction
+  TEST_UNIT_WITH_CLASS_CONST =
+    'unit TestClassConstUnit;' + LineEnding +
+    '' + LineEnding +
+    '{$mode objfpc}{$H+}' + LineEnding +
+    '' + LineEnding +
+    'interface' + LineEnding +
+    '' + LineEnding +
+    'type' + LineEnding +
+    '  TMyClass = class' + LineEnding +
+    '  public const' + LineEnding +
+    '    MY_CONST = 42;' + LineEnding +
+    '    STR_CONST = ''hello'';' + LineEnding +
+    '  public' + LineEnding +
+    '    FValue: Integer;' + LineEnding +
+    '    procedure DoSomething;' + LineEnding +
+    '  end;' + LineEnding +
+    '' + LineEnding +
+    'implementation' + LineEnding +
     '' + LineEnding +
     'procedure TMyClass.DoSomething;' + LineEnding +
     'begin' + LineEnding +
@@ -1923,6 +1951,83 @@ begin
   AssertTrue('Should have Variable kind (13)', Pos('"kind" : 13', RawJSON) > 0);
 
   // Verify class also exists (to confirm other symbols still work)
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestClassConstantSymbolsHierarchical;
+var
+  RawJSON: String;
+begin
+  // This test verifies that class constants appear in hierarchical mode
+
+  // Set hierarchical mode
+  SetClientCapabilities(True);
+
+  // Create test file with class constants
+  CreateTestFile(TEST_UNIT_WITH_CLASS_CONST);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify class constant symbols are present (kind 14 = Constant)
+  AssertTrue('JSON should contain MY_CONST', Pos('"MY_CONST"', RawJSON) > 0);
+  AssertTrue('JSON should contain STR_CONST', Pos('"STR_CONST"', RawJSON) > 0);
+  AssertTrue('Should have Constant kind (14)', Pos('"kind" : 14', RawJSON) > 0);
+
+  // Verify hierarchical structure - constants should be children of TMyClass
+  AssertTrue('Should have children in hierarchical mode', Pos('"children"', RawJSON) > 0);
+
+  // Verify class and other members also exist
+  AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+  AssertTrue('JSON should contain FValue field', Pos('"FValue"', RawJSON) > 0);
+  AssertTrue('JSON should contain DoSomething method', Pos('"DoSomething"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestClassConstantSymbolsFlat;
+var
+  RawJSON: String;
+begin
+  // This test verifies that class constants appear in flat mode with Class.Const naming
+
+  // Set flat mode
+  SetClientCapabilities(False);
+
+  // Create test file with class constants
+  CreateTestFile(TEST_UNIT_WITH_CLASS_CONST);
+
+  // Load code buffer
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code buffer should be loaded', FTestCode);
+
+  // Use SymbolManager to reload and extract symbols
+  SymbolManager.Reload(FTestCode, True);
+
+  // Get the raw JSON from SymbolManager
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+
+  // Verify we extracted symbols
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify class constants use Class.Const naming format
+  AssertTrue('JSON should contain TMyClass.MY_CONST',
+    Pos('"TMyClass.MY_CONST"', RawJSON) > 0);
+  AssertTrue('JSON should contain TMyClass.STR_CONST',
+    Pos('"TMyClass.STR_CONST"', RawJSON) > 0);
+
+  // Verify kind is Constant (14)
+  AssertTrue('Should have Constant kind (14)', Pos('"kind" : 14', RawJSON) > 0);
+
+  // Verify class also exists
   AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
 end;
 
