@@ -1780,7 +1780,7 @@ var
 begin
   Entry := TSymbolTableEntry(SymbolTable.Find(FileName));
   if Entry <> nil then
-  begin
+    begin
     // Remove file from database (both symbols and entries tables)
     if (Database <> nil) and (Entry.Code <> nil) then
       Database.RemoveFile(Entry.Code.FileName);
@@ -1789,7 +1789,7 @@ begin
     Index := SymbolTable.FindIndexOf(FileName);
     if Index <> -1 then
       SymbolTable.Delete(Index);
-  end;
+    end;
 end;
 
 procedure TSymbolManager.UnloadFile(FileName: String);
@@ -1804,19 +1804,19 @@ begin
     Exit;
 
   if Database <> nil then
-  begin
+    begin
     // With database: just remove from memory, symbols stay in DB
     Index := SymbolTable.FindIndexOf(FileName);
     if Index <> -1 then
       SymbolTable.Delete(Index);  // Frees TSymbolTableEntry
-  end
+    end
   else
-  begin
+    begin
     // Without database: keep entry for workspace/symbol queries
     // Mark as unloaded so we know the file is closed
     Entry.Unloaded := True;
     // Note: Entry and its Symbols remain in memory
-  end;
+    end;
 end;
 
 function TSymbolManager.IsFileUnloaded(FileName: String): Boolean;
@@ -2002,19 +2002,19 @@ begin
     end
   else
     begin
-      // Handle reopening of unloaded files
-      if Entry.Unloaded then
+    // Handle reopening of unloaded files
+    if Entry.Unloaded then
       begin
-        Entry.Unloaded := False;
-        Entry.Modified := True;  // Force reload on next request
+      Entry.Unloaded := False;
+      Entry.Modified := True;  // Force reload on next request
       end;
 
-      if Entry.Code <> Code then
+    if Entry.Code <> Code then
       begin
-        // Update Entry.Code to point to the new buffer
-        // This handles the case when a file is moved/renamed:
-        // the filename (key) is the same but the Code buffer is different
-        Entry.Code := Code;
+      // Update Entry.Code to point to the new buffer
+      // This handles the case when a file is moved/renamed:
+      // the filename (key) is the same but the Code buffer is different
+      Entry.Code := Code;
       end;
     end;
   result := Entry;
@@ -2123,12 +2123,12 @@ begin
   NormalizedFile := NormalizePath(FileDir);
 
   for i := 0 to fWorkspacePaths.Count - 1 do
-  begin
+    begin
     WorkspacePath := fWorkspacePaths[i];
     // Check if file path starts with workspace path
     if Copy(NormalizedFile, 1, Length(WorkspacePath)) = WorkspacePath then
       Exit(True);
-  end;
+    end;
 end;
 
 finalization

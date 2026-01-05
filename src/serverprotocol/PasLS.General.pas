@@ -503,15 +503,15 @@ begin
         end;
 
     if Result.Capabilities.workspaceSymbolProvider then
-    begin
+      begin
       // Store workspace paths in SymbolManager for IsFileInWorkspace checks
       SymbolManager.WorkspacePaths.Clear;
       for aPath in Paths do
-      begin
+        begin
         SymbolManager.WorkspacePaths.Add(SymbolManager.NormalizePath(aPath));
         SymbolManager.Scan(aPath, false);
+        end;
       end;
-    end;
 
     CheckProgramSetting;
 

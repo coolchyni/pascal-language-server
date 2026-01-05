@@ -143,11 +143,11 @@ begin
   // Just delete the file - SymbolManager should be freed first in TearDown
   FTestCode := nil;
   if FTestFile <> '' then
-  begin
+    begin
     if FileExists(FTestFile) then
       DeleteFile(FTestFile);
     FTestFile := '';
-  end;
+    end;
 end;
 
 procedure TTestSublimeProfile.SetUp;

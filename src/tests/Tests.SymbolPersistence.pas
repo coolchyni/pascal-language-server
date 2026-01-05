@@ -98,11 +98,11 @@ procedure TTestSymbolPersistence.CleanupTestFile;
 begin
   FTestCode := nil;
   if FTestFile <> '' then
-  begin
+    begin
     if FileExists(FTestFile) then
       DeleteFile(FTestFile);
     FTestFile := '';
-  end;
+    end;
 end;
 
 function TTestSymbolPersistence.ParseSymbols(const RawJSON: String): TJSONArray;
