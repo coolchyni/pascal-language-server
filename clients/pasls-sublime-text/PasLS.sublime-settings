@@ -1,0 +1,100 @@
+{
+  // User-level settings. Can be overridden in project-specific settings.
+
+  // Automatically download and manage the binary from GitHub releases.
+  // Set to false if you want to use a manually installed binary.
+  // This must be set from global settings file.
+  "manageBinary": true,
+
+  // The command to run the language server.
+  // If manageBinary is true, the binary will be automatically downloaded
+  // and ${server_path} will point to it.
+  // If manageBinary is false, you must provide the full path to the pasls binary.
+  "command": [
+    "${server_path}"
+    // For manual installation, replace ${server_path} with your binary path:
+    // Example for macOS:
+    // "/path/to/pascal-language-server/pasls"
+    // Example for Linux:
+    // "/path/to/pascal-language-server/pasls"
+    // Example for Windows:
+    // "C:\\path\\to\\pascal-language-server\\pasls.exe"
+  ],
+
+  // Environment variables required by the language server
+  "env": {
+    // Path to Free Pascal source directory
+    "FPCDIR": "",
+    // Target platform (e.g., darwin, linux, win64)
+    "FPCTARGET": "",
+    // Target CPU architecture (e.g., x86_64, aarch64)
+    "FPCTARGETCPU": "",
+    // Path to Lazarus directory
+    "LAZARUSDIR": "",
+    // Path to Free Pascal compiler executable
+    "PP": ""
+  },
+
+  // Initialization options for the language server
+  "initializationOptions": {
+    // Compiler flags to specify paths, macros, etc.
+    // Example: ["-Fu/path/to/units", "-Fi/path/to/includes", "-dMY_MACRO"]
+    "fpcOptions": [],
+
+    // Path to symbols database file for faster symbol queries
+    // Example: "$(tmpdir)/pasls-symbols.db" or "/path/to/symbols.db"
+    "symbolDatabase": "symbols.db",
+
+    // Maximum number of completions returned per query
+    "maximumCompletions": 100,
+
+    // Preferred method to handle overloaded functions in document symbol requests
+    // 1: Duplicate function names appear in the list
+    // 2: After the original definition ignore others
+    // 3: Add a suffix which denotes the overload count
+    "overloadPolicy": 3,
+
+    // Insert procedure completions with parameters as snippets
+    "insertCompletionsAsSnippets": true,
+
+    // Insert empty brackets for procedure completions
+    "insertCompletionProcedureBrackets": true,
+
+    // Add workspace folders to unit paths (-Fu)
+    "includeWorkspaceFoldersAsUnitPaths": true,
+
+    // Add workspace folders to include paths (-Fi)
+    "includeWorkspaceFoldersAsIncludePaths": true,
+
+    // Workspace folder paths to exclude from workspace path collection
+    // Example: ["/path/to/workspace/node_modules", "/path/to/workspace/vendor"]
+    "excludeWorkspaceFolders": [],
+
+    // Check syntax when file opens or saves
+    "checkSyntax": true,
+
+    // Publish syntax errors as diagnostics
+    "publishDiagnostics": true,
+
+    // Enable workspace symbols
+    "workspaceSymbols": true,
+
+    // Enable document symbols
+    "documentSymbols": true,
+
+    // Completions contain minimal extra information
+    "minimalisticCompletions": false,
+
+    // Show syntax errors in UI with window/showMessage
+    "showSyntaxErrors": true
+  },
+
+  // Enabled by default
+  "enabled": true,
+
+  // Language ID for the Language Server Protocol
+  "languageId": "pascal",
+
+  // Document selectors
+  "selector": "source.pascal"
+}
