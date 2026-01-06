@@ -291,15 +291,15 @@ uses
   CodeAtom,
   FindDeclarationTool, KeywordFuncLists,PascalParserTool,
   { Protocol }
-  PasLS.Settings, PasLS.ClientProfile;
+  PasLS.Settings;
 
 function GetSymbolMode: TSymbolMode;
 begin
-  // Priority 1: Client profile forces flat mode
-  if TClientProfile.Current.HasFeature(cfFlatSymbolMode) then
+  // Priority 1: Explicit setting forces flat mode
+  if ServerSettings.flatSymbolMode then
     Exit(smFlat);
 
-  // Priority 2: Auto mode - use hierarchical if client supports it and server enables it
+  // Priority 2: Auto mode based on client capability
   if ClientSupportsDocumentSymbol and ServerSettings.documentSymbols then
     Result := smHierarchical
   else
@@ -1118,14 +1118,14 @@ function TSymbolExtractor.ShouldExcludeInterfaceDecl: Boolean;
 begin
   Result := (Builder.Mode = smFlat) and
             (CodeSection = ctnInterface) and
-            TClientProfile.Current.HasFeature(cfExcludeInterfaceMethodDecls);
+            ServerSettings.IsSymbolExcluded(TExcludableSymbol.esInterfaceMethodDecls);
 end;
 
 function TSymbolExtractor.ShouldExcludeImplClass: Boolean;
 begin
   Result := (Builder.Mode = smFlat) and
             (CodeSection = ctnImplementation) and
-            TClientProfile.Current.HasFeature(cfExcludeImplClassDefs);
+            ServerSettings.IsSymbolExcluded(TExcludableSymbol.esImplClassDefs);
 end;
 
 function TSymbolExtractor.AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind; Name: String; Container: String): TSymbol;
@@ -1494,7 +1494,7 @@ begin
                 Builder.BeginInterfaceSection(Node);
                 // For flat mode, add namespace symbol (unless filtered)
                 if Builder.Mode = smFlat then
-                  if not TClientProfile.Current.HasFeature(cfExcludeSectionContainers) then
+                  if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esSectionContainers) then
                     AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Interface);
               end;
             ctnImplementation:
@@ -1503,7 +1503,7 @@ begin
                 Builder.BeginImplementationSection(Node);
                 // For flat mode, add namespace symbol (unless filtered)
                 if Builder.Mode = smFlat then
-                  if not TClientProfile.Current.HasFeature(cfExcludeSectionContainers) then
+                  if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esSectionContainers) then
                     AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Implementation);
               end;
           end;

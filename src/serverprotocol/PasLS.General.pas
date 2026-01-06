@@ -100,7 +100,7 @@ Type
 implementation
 
 uses
-  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates, PasLS.ClientProfile;
+  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates;
 
 
 const
@@ -265,9 +265,8 @@ end;
 
 procedure TInitialize.ShowConfigStatus(Params : TInitializeParams; Paths: TStrings; CodeToolsOptions: TCodeToolsOptions);
 var
-  Profile: TClientProfile;
-  Feature: TClientFeature;
-  FeatureList, aPath: String;
+  aPath, ExcludeList: String;
+  I: Integer;
 begin
   DoLog( kStatusPrefix+'Server: ' + {$INCLUDE %DATE%});
   DoLog( kStatusPrefix+'Client: ' + Params.clientInfo.name + ' ' + Params.clientInfo.version);
@@ -312,19 +311,21 @@ begin
   DoLog(kSettingPrefix+'documentSymbols: ', ServerSettings.documentSymbols);
   DoLog(kSettingPrefix+'minimalisticCompletions: ', ServerSettings.minimalisticCompletions);
   DoLog(kSettingPrefix+'showSyntaxErrors: ', ServerSettings.showSyntaxErrors);
+  DoLog(kSettingPrefix+'flatSymbolMode: ', ServerSettings.flatSymbolMode);
+  DoLog(kSettingPrefix+'nullDocumentVersion: ', ServerSettings.nullDocumentVersion);
+  DoLog(kSettingPrefix+'filterTextOnly: ', ServerSettings.filterTextOnly);
 
-  // Show client profile
-  Profile := TClientProfile.Current;
-  if Profile.Features <> [] then
+  // Show excludeSymbols
+  if ServerSettings.excludeSymbols.Count > 0 then
     begin
-      FeatureList := '';
-      for Feature in Profile.Features do
+      ExcludeList := '';
+      for I := 0 to ServerSettings.excludeSymbols.Count - 1 do
         begin
-          if FeatureList <> '' then
-            FeatureList := FeatureList + ', ';
-          FeatureList := FeatureList + FeatureToStr(Feature);
+          if ExcludeList <> '' then
+            ExcludeList := ExcludeList + ', ';
+          ExcludeList := ExcludeList + ServerSettings.excludeSymbols[I];
         end;
-      DoLog(kStatusPrefix+'Client Features: ' + FeatureList);
+      DoLog(kSettingPrefix+'excludeSymbols: [' + ExcludeList + ']');
     end;
 
   DoLog(kStatusPrefix+'Workspace paths (%d):',[Paths.Count]);
@@ -406,16 +407,6 @@ begin
 
     ServerSettings.Assign(Params.initializationOptions);
     PasLS.Settings.ClientInfo.Assign(Params.ClientInfo);
-
-    // Select client profile based on client name
-    TClientProfile.SelectProfile(Params.ClientInfo.name);
-
-    // Apply user overrides from initializationOptions
-    if (ServerSettings.clientProfileEnableFeatures.Count > 0) or
-       (ServerSettings.clientProfileDisableFeatures.Count > 0) then
-      TClientProfile.ApplyOverrides(
-        ServerSettings.clientProfileEnableFeatures,
-        ServerSettings.clientProfileDisableFeatures);
 
     // Detect hierarchical document symbol support
     if Assigned(Params.capabilities) and

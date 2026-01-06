@@ -34,7 +34,7 @@ implementation
 
 Uses
   { LSP }
-  PasLS.ClientProfile,
+  PasLS.Settings,
   LSP.BaseTypes,
   LSP.WorkSpace, PasLS.WorkSpace;
 
@@ -58,7 +58,7 @@ begin
     // but ideally you're supposed to provided correct versions.
     // See `OptionalVersionedTextDocumentIdentifier` from
     // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
-    if TClientProfile.Current.HasFeature(cfNullDocumentVersion) then
+    if ServerSettings.nullDocumentVersion then
       TextDocumentEdit.textDocument.version := nil
     else
       TextDocumentEdit.textDocument.version := 0;

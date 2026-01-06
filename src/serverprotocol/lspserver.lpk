@@ -139,10 +139,6 @@
         <UnitName Value="PasLS.InactiveRegions"/>
       </Item>
       <Item>
-        <Filename Value="PasLS.ClientProfile.pas"/>
-        <UnitName Value="PasLS.ClientProfile"/>
-      </Item>
-      <Item>
         <Filename Value="PasLS.Rename.pas"/>
         <UnitName Value="PasLS.Rename"/>
       </Item>
