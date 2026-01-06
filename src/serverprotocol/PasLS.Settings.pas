@@ -43,10 +43,10 @@ type
     esSectionContainers,      // interface/implementation section containers
     esInterfaceMethodDecls,   // method declarations from interface section
     esImplClassDefs,          // class definitions from implementation section
-    esFields,                 // class/record fields (future)
-    esProperties,             // class properties (future)
-    esConstants,              // constants (future)
-    esEnumMembers             // enum members (future)
+    esFields,                 // class/record fields
+    esProperties,             // class properties
+    esConstants,              // constants (global and class constants)
+    esEnumMembers             // enum members
   );
   TExcludableSymbols = set of TExcludableSymbol;
 

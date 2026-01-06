@@ -98,8 +98,9 @@ type
     FEntry: TSymbolTableEntry;
     FTool: TCodeTool;
 
-    // For hierarchical mode: map className -> TDocumentSymbolEx
+    // For hierarchical mode: map className/enumName -> TDocumentSymbolEx
     FClassMap: TFPHashObjectList;
+    FEnumMap: TFPHashObjectList;
     FRootSymbols: TDocumentSymbolExItems;
 
     // For tracking current hierarchy
@@ -113,6 +114,7 @@ type
     FCurrentSectionSymbol: TDocumentSymbolEx;
 
     function FindOrCreateClass(const AClassName: String; Node: TCodeTreeNode; IsImplementationContainer: Boolean = False): TDocumentSymbolEx;
+    function FindEnumByName(const AEnumName: String): TDocumentSymbolEx;
     procedure SetNodeRange(Symbol: TDocumentSymbolEx; Node: TCodeTreeNode);
     function GetCurrentContainer: TDocumentSymbolExItems;
     function AddFlatSymbol(Node: TCodeTreeNode; const Name: String; Kind: TSymbolKind; const ContainerName: String = ''): TSymbol;
@@ -130,6 +132,7 @@ type
     function AddGlobalFunction(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddStruct(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddEnum(Node: TCodeTreeNode; const Name: String): TSymbol;
+    function AddEnumMember(Node: TCodeTreeNode; const EnumName, MemberName: String): TSymbol;
     function AddTypeAlias(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddConstant(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddVariable(Node: TCodeTreeNode; const Name: String): TSymbol;
@@ -400,6 +403,7 @@ begin
   if FMode = smHierarchical then
     begin
       FClassMap := TFPHashObjectList.Create(False); // Don't own objects - they're owned by FRootSymbols
+      FEnumMap := TFPHashObjectList.Create(False);
       FRootSymbols := TDocumentSymbolExItems.Create;
     end;
 end;
@@ -409,6 +413,7 @@ begin
   if FMode = smHierarchical then
     begin
       FreeAndNil(FClassMap);
+      FreeAndNil(FEnumMap);
       FreeAndNil(FRootSymbols);
     end;
   inherited;
@@ -543,6 +548,14 @@ begin
       // Add reference to class map for lookup with section-specific key
       FClassMap.Add(Key, Result);
     end;
+end;
+
+function TSymbolBuilder.FindEnumByName(const AEnumName: String): TDocumentSymbolEx;
+begin
+  Result := nil;
+  if FMode <> smHierarchical then
+    Exit;
+  Result := TDocumentSymbolEx(FEnumMap.Find(AEnumName));
 end;
 
 function TSymbolBuilder.AddClass(Node: TCodeTreeNode; const Name: String): TSymbol;
@@ -690,8 +703,38 @@ begin
         EnumSymbol.name := Name;
         EnumSymbol.kind := TSymbolKind._Enum;
         SetNodeRange(EnumSymbol, Node);
+        // Register enum for later member lookup
+        FEnumMap.Add(Name, EnumSymbol);
         // Also add to flat symbol list for database/workspace symbol
         Result := AddFlatSymbol(Node, Name, TSymbolKind._Enum);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddEnumMember(Node: TCodeTreeNode; const EnumName, MemberName: String): TSymbol;
+var
+  EnumSymbol, MemberSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: EnumName.MemberName naming
+        Result := AddFlatSymbol(Node, EnumName + '.' + MemberName, TSymbolKind._EnumMember);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: add member to enum's children
+        EnumSymbol := FindEnumByName(EnumName);
+        if EnumSymbol <> nil then
+          begin
+            MemberSymbol := TDocumentSymbolEx.Create(EnumSymbol.children);
+            MemberSymbol.name := MemberName;
+            MemberSymbol.kind := TSymbolKind._EnumMember;
+            SetNodeRange(MemberSymbol, Node);
+          end;
+        // Add to flat symbol list with container
+        Result := AddFlatSymbol(Node, MemberName, TSymbolKind._EnumMember, EnumName);
       end;
   end;
 end;
@@ -1203,7 +1246,8 @@ begin
             // Extract property name from current atom
             PropertyName := Copy(Tool.Scanner.CleanedSrc, Tool.CurPos.StartPos,
                                  Tool.CurPos.EndPos - Tool.CurPos.StartPos);
-            Builder.AddProperty(Node, TypeName, PropertyName);
+            if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esProperties) then
+              Builder.AddProperty(Node, TypeName, PropertyName);
           end;
         ctnVarDefinition:
           begin
@@ -1215,7 +1259,8 @@ begin
             i := Pos(':', FieldName);
             if i > 0 then
               FieldName := Copy(FieldName, 1, i - 1);
-            Builder.AddField(Node, TypeName, FieldName);
+            if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esFields) then
+              Builder.AddField(Node, TypeName, FieldName);
           end;
         ctnConstSection:
           begin
@@ -1228,7 +1273,8 @@ begin
                 if Child.Desc = ctnConstDefinition then
                   begin
                     ConstName := GetIdentifierAtPos(Tool, Child.StartPos, true, true);
-                    Builder.AddClassConstant(Child, TypeName, ConstName);
+                    if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esConstants) then
+                      Builder.AddClassConstant(Child, TypeName, ConstName);
                     PrintNodeDebug(Child);
                   end;
                 Child := Child.NextBrother;
@@ -1282,7 +1328,7 @@ end;
 procedure TSymbolExtractor.ExtractTypeDefinition(TypeDefNode, Node: TCodeTreeNode);
 var
   Child: TCodeTreeNode;
-  TypeName: String;
+  TypeName, MemberName: String;
 begin
   while Node <> nil do
     begin
@@ -1336,13 +1382,16 @@ begin
           begin
             TypeName := CleanTypeName(GetIdentifierAtPos(Tool, TypeDefNode.StartPos, true, true));
             Builder.AddEnum(TypeDefNode, TypeName);
-            Child := Node.FirstChild;
-            while Child <> nil do
+            if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esEnumMembers) then
               begin
-                PrintNodeDebug(Child);
-                // todo: make an option to show enum members in doc symbols
-                //AddSymbol(Child, TSymbolKind._EnumMember, TypeName+'.'+GetIdentifierAtPos(Child.StartPos, true, true));
-                Child := Child.NextBrother;
+                Child := Node.FirstChild;
+                while Child <> nil do
+                  begin
+                    PrintNodeDebug(Child);
+                    MemberName := GetIdentifierAtPos(Tool, Child.StartPos, true, true);
+                    Builder.AddEnumMember(Child, TypeName, MemberName);
+                    Child := Child.NextBrother;
+                  end;
               end;
           end;
         otherwise
@@ -1526,7 +1575,8 @@ begin
                 if Child.Desc = ctnConstDefinition then
                   begin
                     ConstName := GetIdentifierAtPos(Tool, Child.StartPos, true, true);
-                    Builder.AddConstant(Child, ConstName);
+                    if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esConstants) then
+                      Builder.AddConstant(Child, ConstName);
                     PrintNodeDebug(Child);
                   end;
                 Child := Child.NextBrother;
