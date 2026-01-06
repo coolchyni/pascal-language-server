@@ -133,6 +133,7 @@ type
     function AddVariable(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddProperty(Node: TCodeTreeNode; const AClassName, APropertyName: String): TSymbol;
     function AddField(Node: TCodeTreeNode; const AClassName, AFieldName: String): TSymbol;
+    function AddClassConstant(Node: TCodeTreeNode; const AClassName, AConstName: String): TSymbol;
     // Add nested function as child of parent
     function AddNestedFunction(Parent: TDocumentSymbolEx; Node: TCodeTreeNode; const Name, ParentPath: String): TDocumentSymbolEx;
 
@@ -812,6 +813,36 @@ begin
   end;
 end;
 
+function TSymbolBuilder.AddClassConstant(Node: TCodeTreeNode;
+  const AClassName, AConstName: String): TSymbol;
+var
+  ClassSymbol: TDocumentSymbolEx;
+  ConstSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: Class.Const naming, no containerName (Lazarus style)
+        Result := AddFlatSymbol(Node, AClassName + '.' + AConstName, TSymbolKind._Constant);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: add constant to class's children
+        ClassSymbol := FindOrCreateClass(AClassName, Node);
+        if ClassSymbol <> nil then
+          begin
+            ConstSymbol := TDocumentSymbolEx.Create(ClassSymbol.children);
+            ConstSymbol.name := AConstName;
+            ConstSymbol.kind := TSymbolKind._Constant;
+            SetNodeRange(ConstSymbol, Node);
+          end;
+        // Add to flat symbol list with LSP semantics
+        Result := AddFlatSymbol(Node, AConstName, TSymbolKind._Constant, AClassName);
+      end;
+  end;
+end;
+
 function TSymbolBuilder.AddNestedFunction(Parent: TDocumentSymbolEx; Node: TCodeTreeNode; const Name, ParentPath: String): TDocumentSymbolEx;
 var
   FullPath: String;
@@ -1111,7 +1142,7 @@ procedure TSymbolExtractor.ExtractObjCClassMethods(ClassNode, Node: TCodeTreeNod
 var
   Child: TCodeTreeNode;
   ExternalClass: boolean = false;
-  TypeName, PropertyName, FieldName: String;
+  TypeName, PropertyName, FieldName, ConstName: String;
   i: Integer;
 begin
   while Node <> nil do
@@ -1163,6 +1194,24 @@ begin
             if i > 0 then
               FieldName := Copy(FieldName, 1, i - 1);
             Builder.AddField(Node, TypeName, FieldName);
+          end;
+        ctnConstSection:
+          begin
+            // Handle class constants (e.g., "public const MY_CONST = 42;")
+            Inc(IndentLevel);
+            TypeName := GetIdentifierAtPos(Tool, ClassNode.StartPos, true, true);
+            Child := Node.FirstChild;
+            while Child <> nil do
+              begin
+                if Child.Desc = ctnConstDefinition then
+                  begin
+                    ConstName := GetIdentifierAtPos(Tool, Child.StartPos, true, true);
+                    Builder.AddClassConstant(Child, TypeName, ConstName);
+                    PrintNodeDebug(Child);
+                  end;
+                Child := Child.NextBrother;
+              end;
+            Dec(IndentLevel);
           end;
         ctnClassPublic,ctnClassPublished,ctnClassPrivate,ctnClassProtected,
         ctnClassRequired,ctnClassOptional:
