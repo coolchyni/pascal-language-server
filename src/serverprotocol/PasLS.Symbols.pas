@@ -64,6 +64,7 @@ type
     Symbols: TSymbolItems;
     Code: TCodeBuffer;
     fRawJSON: String;
+    fUnloaded: Boolean;
     function GetRawJSON: String; inline;
   public
     Modified: Boolean;
@@ -76,6 +77,7 @@ type
     function RequestReload: boolean;
     function Count: integer; inline;
     property RawJSON: String read GetRawJSON;
+    property Unloaded: Boolean read fUnloaded write fUnloaded;
   end;
 
   { TSymbolBuilder }
@@ -183,6 +185,8 @@ type
     function SingleQuery(Stat: String): boolean;
     function Exec(Stat: String): boolean;
     procedure LogError(errmsg: pansichar); virtual;
+  public
+    destructor Destroy; override;
   end;
 
   { TSymbolDatabase }
@@ -208,6 +212,7 @@ type
     procedure TouchFile(Path: String);
     function FileModified(Path: String): boolean;
     procedure InsertFile(Path: String);
+    procedure RemoveFile(Path: String);
     Property Transport : TMessageTransport Read FTransport Write FTransport;
   end;
 
@@ -219,6 +224,7 @@ type
     SymbolTable: TFPHashObjectList;
     ErrorList: TStringList;
     fDatabase: TSymbolDatabase;
+    fWorkspacePaths: TStringList;
 
     function Load(Path: String): TCodeBuffer;
     procedure AddError(Message: String);
@@ -238,7 +244,7 @@ type
     { Searching }
     function FindDocumentSymbols(Path: String): TJSONSerializedArray;
     function FindWorkspaceSymbols(Query: String): TJSONSerializedArray;
-    function CollectSerializedSymbols: TJSONSerializedArray;
+    function CollectSerializedSymbols(Query: String): TJSONSerializedArray;
 
     { Errors }
     procedure ClearErrors;
@@ -251,6 +257,13 @@ type
 
     { File Management }
     procedure RemoveFile(FileName: String);
+    procedure UnloadFile(FileName: String);
+    function IsFileUnloaded(FileName: String): Boolean;
+
+    { Workspace Management }
+    property WorkspacePaths: TStringList read fWorkspacePaths;
+    function NormalizePath(const Path: String): String;
+    function IsFileInWorkspace(const FilePath: String): Boolean;
 
     Property Transport : TMessageTransport Read fTransport Write setTransport;
   end;
@@ -927,6 +940,10 @@ begin
             end;
         finally
           SerializedItems.Free;
+          // Clear Symbols to free memory if database is available
+          // (workspace/symbol will use Database.FindSymbols instead of in-memory symbols)
+          if SymbolManager.Database <> nil then
+            FEntry.Symbols.Clear;
         end;
       end;
   end;
@@ -1032,7 +1049,10 @@ begin
     fRawJSON := SerializedItems.AsJSON;
   Finally
     SerializedItems.Free;
-    Symbols.Clear;
+    // Clear Symbols to free memory if database is available
+    // (workspace/symbol will use Database.FindSymbols instead of in-memory symbols)
+    if SymbolManager.Database <> nil then
+      Symbols.Clear;
   end;
 end;
 
@@ -1052,6 +1072,8 @@ end;
 
 constructor TSymbolTableEntry.Create(_Code: TCodeBuffer);
 begin
+  inherited Create;
+  fUnloaded := False;
   Code := _Code;
   Key := ExtractFileName(Code.FileName);
   Symbols := TSymbolItems.Create;
@@ -1610,9 +1632,15 @@ begin
 end;
 
 destructor TSymbolExtractor.Destroy;
+var
+  i: Integer;
 begin
   Builder.SerializeSymbols;
   Builder.Free;
+  // Free all TSymbol objects in OverloadMap before freeing the list
+  // (TFPHashList doesn't own its items)
+  for i := 0 to OverloadMap.Count - 1 do
+    TSymbol(OverloadMap.Items[i]).Free;
   OverloadMap.Free;
   RelatedFiles.Free;
   inherited;
@@ -1646,6 +1674,13 @@ begin
   result := sqlite3_exec(database, @Stat[1], nil, nil, @errmsg) = SQLITE_OK;
   if not result then
     LogError(errmsg);
+end;
+
+destructor TSQLiteDatabase.Destroy;
+begin
+  if Database <> nil then
+    sqlite3_close(Database);
+  inherited;
 end;
 
 { TSymbolDatabase }
@@ -1797,6 +1832,19 @@ begin
   Exec(Stat);
 end;
 
+procedure TSymbolDatabase.RemoveFile(Path: String);
+var
+  Stat: String;
+begin
+  // Delete from symbols table
+  Stat := 'DELETE FROM symbols WHERE path = '''+Path+'''';
+  Exec(Stat);
+
+  // Delete from entries table (so file will be re-scanned on next open)
+  Stat := 'DELETE FROM entries WHERE path = '''+Path+'''';
+  Exec(Stat);
+end;
+
 procedure TSymbolDatabase.InsertSymbols(Collection: TSymbolItems; StartIndex, EndIndex: Integer);
 var
   Stat: String;
@@ -1907,16 +1955,53 @@ var
 begin
   Entry := TSymbolTableEntry(SymbolTable.Find(FileName));
   if Entry <> nil then
-  begin
-    // Clear symbols from database if enabled
+    begin
+    // Remove file from database (both symbols and entries tables)
     if (Database <> nil) and (Entry.Code <> nil) then
-      Database.ClearSymbols(Entry.Code.FileName);
+      Database.RemoveFile(Entry.Code.FileName);
 
     // Remove entry from in-memory symbol table
     Index := SymbolTable.FindIndexOf(FileName);
     if Index <> -1 then
       SymbolTable.Delete(Index);
-  end;
+    end;
+end;
+
+procedure TSymbolManager.UnloadFile(FileName: String);
+var
+  Index: Integer;
+  Entry: TSymbolTableEntry;
+begin
+  Entry := TSymbolTableEntry(SymbolTable.Find(FileName));
+
+  // Guard: nothing to unload
+  if Entry = nil then
+    Exit;
+
+  if Database <> nil then
+    begin
+    // With database: just remove from memory, symbols stay in DB
+    Index := SymbolTable.FindIndexOf(FileName);
+    if Index <> -1 then
+      SymbolTable.Delete(Index);  // Frees TSymbolTableEntry
+    end
+  else
+    begin
+    // Without database: keep entry for workspace/symbol queries
+    // Mark as unloaded so we know the file is closed
+    Entry.Unloaded := True;
+    // Note: Entry and its Symbols remain in memory
+    end;
+end;
+
+function TSymbolManager.IsFileUnloaded(FileName: String): Boolean;
+var
+  Entry: TSymbolTableEntry;
+begin
+  Result := False;
+  Entry := TSymbolTableEntry(SymbolTable.Find(FileName));
+  if Entry <> nil then
+    Result := Entry.Unloaded;
 end;
 
 function TSymbolManager.FindWorkspaceSymbols(Query: String): TJSONSerializedArray;
@@ -1924,29 +2009,46 @@ begin
   if Database <> nil then
     result := Database.FindSymbols(Query)
   else
-    result := CollectSerializedSymbols;
+    result := CollectSerializedSymbols(Query);
 end;
 
-function TSymbolManager.CollectSerializedSymbols: TJSONSerializedArray;
+function TSymbolManager.CollectSerializedSymbols(Query: String): TJSONSerializedArray;
 var
-  i : integer;
+  i, j: integer;
   Entry: TSymbolTableEntry;
+  Symbol: TSymbol;
   Contents: TLongString;
+  NeedComma: Boolean;
+  LowerQuery: String;
 begin
   Contents.Clear;
   Contents.Add('[');
+  NeedComma := False;
+  LowerQuery := LowerCase(Query);
 
+  // Collect individual Symbol.RawJSON (SymbolInformation format)
+  // instead of Entry.RawJSON (which is DocumentSymbol format in hierarchical mode)
   for i := 0 to SymbolTable.Count - 1 do
     begin
       Entry := TSymbolTableEntry(SymbolTable[i]);
-      if Entry.RawJSON <> '' then
-        if Contents.Add(Entry.RawJSON, 1, Length(Entry.RawJSON) - 2) then
-          Contents.Add(',');
+      for j := 0 to Entry.Count - 1 do
+        begin
+          Symbol := Entry.Symbols.Items[j];
+          // Filter by query (case-insensitive substring match, like database)
+          if (LowerQuery = '') or (Pos(LowerQuery, LowerCase(Symbol.Name)) > 0) then
+            begin
+              if Symbol.RawJSON <> '' then
+                begin
+                  if NeedComma then
+                    Contents.Add(',');
+                  Contents.Add(Symbol.RawJSON);
+                  NeedComma := True;
+                end;
+            end;
+        end;
     end;
-  
-  Contents.Rewind;
-  Contents.Add(']');
 
+  Contents.Add(']');
   Result := TJSONSerializedArray.Create(Contents.S);
 end;
 
@@ -2082,12 +2184,22 @@ begin
       Entry := TSymbolTableEntry.Create(Code);
       SymbolTable.Add(Key, Entry);
     end
-  else if Entry.Code <> Code then
+  else
     begin
+    // Handle reopening of unloaded files
+    if Entry.Unloaded then
+      begin
+      Entry.Unloaded := False;
+      Entry.Modified := True;  // Force reload on next request
+      end;
+
+    if Entry.Code <> Code then
+      begin
       // Update Entry.Code to point to the new buffer
       // This handles the case when a file is moved/renamed:
       // the filename (key) is the same but the Code buffer is different
       Entry.Code := Code;
+      end;
     end;
   result := Entry;
 end;
@@ -2148,15 +2260,59 @@ end;
 
 constructor TSymbolManager.Create;
 begin
+  inherited Create;
   SymbolTable := TFPHashObjectList.Create(True);
   ErrorList := TStringList.Create;
+  fWorkspacePaths := TStringList.Create;
+  {$IFDEF WINDOWS}
+  fWorkspacePaths.CaseSensitive := False;
+  {$ELSE}
+  fWorkspacePaths.CaseSensitive := True;
+  {$ENDIF}
 end;
 
-destructor TSymbolManager.Destroy; 
+destructor TSymbolManager.Destroy;
 begin
+  FreeAndNil(fDatabase);
+  FreeAndNil(fWorkspacePaths);
   ErrorList.Free;
   SymbolTable.Free;
   inherited;
+end;
+
+function TSymbolManager.NormalizePath(const Path: String): String;
+begin
+  Result := ExpandFileName(Path);
+  {$IFDEF WINDOWS}
+  Result := LowerCase(Result);
+  {$ENDIF}
+  // Ensure trailing separator for directory comparison
+  Result := IncludeTrailingPathDelimiter(Result);
+end;
+
+function TSymbolManager.IsFileInWorkspace(const FilePath: String): Boolean;
+var
+  NormalizedFile: String;
+  WorkspacePath: String;
+  FileDir: String;
+  i: Integer;
+begin
+  Result := False;
+  if fWorkspacePaths.Count = 0 then
+    Exit;
+
+  // Get directory without trailing delimiter, then normalize
+  // This avoids double trailing delimiters when NormalizePath adds one
+  FileDir := ExcludeTrailingPathDelimiter(ExtractFilePath(FilePath));
+  NormalizedFile := NormalizePath(FileDir);
+
+  for i := 0 to fWorkspacePaths.Count - 1 do
+    begin
+    WorkspacePath := fWorkspacePaths[i];
+    // Check if file path starts with workspace path
+    if Copy(NormalizedFile, 1, Length(WorkspacePath)) = WorkspacePath then
+      Exit(True);
+    end;
 end;
 
 finalization

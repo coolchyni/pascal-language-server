@@ -284,9 +284,7 @@ end;
 
 function TServerSettings.CanProvideWorkspaceSymbols: boolean;
 begin
-  result := workspaceSymbols and
-            (symbolDatabase <> '') and
-            FileExists(ExpandFileName(symbolDatabase));
+  result := workspaceSymbols;
 end;
 
 class function TServerSettings.GetPropertyDescription(const PropName: String): String;
