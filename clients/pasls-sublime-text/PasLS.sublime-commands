@@ -1,0 +1,26 @@
+[
+  {
+    "caption": "Preferences: PasLS Settings",
+    "command": "edit_settings",
+    "args": {
+      "base_file": "${packages}/PasLS/PasLS.sublime-settings",
+      "default": "{\n\t$0\n}\n"
+    }
+  },
+  {
+    "caption": "PasLS: Complete Code",
+    "command": "lsp_execute",
+    "args": {
+      "session_name": "PasLS",
+      "command_name": "pasls.completeCode",
+    }
+  },
+  {
+    "caption": "PasLS: Format Code",
+    "command": "lsp_execute",
+    "args": {
+      "session_name": "PasLS",
+      "command_name": "pasls.formatCode"
+    }
+  }
+]
