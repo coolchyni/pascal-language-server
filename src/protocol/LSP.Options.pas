@@ -186,6 +186,15 @@ type
     property resolveProvider: TOptionalBoolean read fResolveProvider write fResolveProvider;
   end;
 
+  { TRenameOptions }
+  TRenameOptions = class(TLSPStreamable)
+  private
+    fPrepareProvider: TOptionalBoolean;
+  published
+    // Renames should be checked and tested before being executed.
+    property prepareProvider: TOptionalBoolean read fPrepareProvider write fPrepareProvider;
+  end;
+
 implementation
 
 { TExecuteCommandOptions }

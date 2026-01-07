@@ -39,6 +39,7 @@ uses
   PasLS.GotoImplementation,
   PasLS.SignatureHelp,
   PasLS.References,
+  PasLS.Rename,
   PasLS.Synchronization,
   PasLS.CodeAction,
   PasLS.DocumentHighlight,
@@ -69,6 +70,8 @@ begin
   LSPHandlerManager.RegisterHandler('textDocument/completion', TCompletion);
   LSPHandlerManager.RegisterHandler('textDocument/implementation', TGotoImplementation);
   LSPHandlerManager.RegisterHandler('textDocument/references', TReferencesRequest);
+  LSPHandlerManager.RegisterHandler('textDocument/rename', TRenameRequest);
+  LSPHandlerManager.RegisterHandler('textDocument/prepareRename', TPrepareRenameRequest);
   LSPHandlerManager.RegisterHandler('textDocument/signatureHelp', TSignatureHelpRequest);
   LSPHandlerManager.RegisterHandler('textDocument/didOpen', TDidOpenTextDocument);
   LSPHandlerManager.RegisterHandler('textDocument/didClose', TDidCloseTextDocument);

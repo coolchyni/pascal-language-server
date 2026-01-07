@@ -48,7 +48,7 @@ Type
 implementation
 
 uses
-  PasLS.Settings, PasLS.Diagnostics;
+  PasLS.Settings, PasLS.Diagnostics, PasLS.CodeUtils;
 
 procedure TReferencesRequest.FindReferences(Filename, MainFilename: String; X, Y: Integer; Items: TLocationItems);
 var
@@ -65,6 +65,7 @@ var
   Completed: boolean;
   UGUnit: TUGUnit;
   Loc: TLocationItem;
+
 begin
 
   // Step 1: load the file
@@ -94,22 +95,9 @@ begin
     if CompareFilenames(DeclCode.Filename,StartSrcCode.Filename)<>0 then
       Files.Add(DeclCode.Filename);
 
-    // parse all used units
-    Graph:=CodeToolBoss.CreateUsesGraph;
-    try
-      Graph.AddStartUnit(MainFilename);
-      Graph.AddTargetUnit(DeclCode.Filename);
-      Graph.Parse(true,Completed);
-      Node:=AVL_Tree.TAVLTreeNode(Graph.FilesTree.FindLowest); // here explicitly casting the return
-        while Node<>nil do begin
-          UGUnit:=TUGUnit(Node.Data);
-          Files.Add(UGUnit.Filename);
-          Node:=AVL_Tree.TAVLTreeNode(Node.Successor); // same, casting return explicitly
-      end;
-    finally
-      Graph.Free;
-    end;
-
+    // Collect project units and pre-load them to ensure the uses graph has all nodes
+    GetProjectUnits(MainFilename, Files, False, Transport);
+  
     // Step 5: find references in all files
     for i:=0 to Files.Count-1 do begin
       DoLog('Searching "%s"...',[Files[i]]);
@@ -185,4 +173,3 @@ begin with Params do
 end;
 
 end.
-

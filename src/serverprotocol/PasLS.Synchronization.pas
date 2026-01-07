@@ -170,6 +170,8 @@ begin
     //allways update the source from the opened document
     Code.Source:=textDocument.text;
 
+    DiagnosticsHandler.CheckSyntax(Transport,Code);
+  
     DiagnosticsHandler.CheckSyntax(Transport, Code);
   
     CheckInactiveRegions(Transport, Code, textDocument.uri);

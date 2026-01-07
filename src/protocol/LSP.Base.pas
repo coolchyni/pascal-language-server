@@ -278,7 +278,11 @@ begin
       end;
     end
   else
-    Result:=FJSONDispatcher.Execute(aRequest);
+    begin
+      if (Obj.IndexOfName('params') = -1) then
+        Obj.Add('params', TJSONObject.Create);
+      Result:=FJSONDispatcher.Execute(aRequest);
+    end;
 end;
 
 { TLSPContextCustomJSONRPCHandler }
