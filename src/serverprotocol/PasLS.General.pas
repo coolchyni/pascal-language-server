@@ -570,6 +570,7 @@ procedure TServerCapabilitiesHelper.ApplySettings(settings: TServerSettings);
 begin
   if not Assigned(Settings) then
     exit;
+
   workspaceSymbolProvider := settings.CanProvideWorkspaceSymbols;
   workspace.workspaceFolders.supported := true;
   workspace.workspaceFolders.changeNotifications := true;
@@ -595,7 +596,6 @@ begin
   signatureHelpProvider.triggerCharacters.Add(',');
 
   renameProvider.prepareProvider := true;
-
 end;
 
 { TLSPInitializeParams }
