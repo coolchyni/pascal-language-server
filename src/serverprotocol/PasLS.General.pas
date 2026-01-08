@@ -19,7 +19,6 @@
 // <https://www.gnu.org/licenses/>.
 unit PasLS.General;
 
-
 {$mode objfpc}{$H+}
 {$modeswitch arrayoperators}
 
@@ -34,11 +33,13 @@ uses
   { Utils }
   PasLS.Settings, PasLS.Symbols, PasLS.Commands, PasLS.LazConfig;
 
-Type
+type
+  
+  { TServerCapabilitiesHelper }
+
   TServerCapabilitiesHelper = class helper for TServerCapabilities
     procedure ApplySettings(settings: TServerSettings);
   end;
-
 
   { TLSPInitializeParams }
 
@@ -46,6 +47,7 @@ Type
   Protected
     Function createInitializationOptions: TInitializationOptions; override;
   end;
+
   { TInitialize }
 
   TInitialize = class(specialize TLSPRequest<TLSPInitializeParams, TInitializeResult>)
@@ -55,13 +57,13 @@ Type
     procedure DoLog(const Msg: String);
     procedure DoLog(const Fmt: String; const args: array of const);
     procedure DoLog(const Msg: String; aBool: Boolean);
-    Function IsPasExt(Const aExtension : String) : Boolean;
+    function IsPasExt(const aExtension : String) : Boolean;
     function IsPathExcluded(const aPath: String; ExcludeFolders: TStrings): Boolean;
     procedure SetFPCPaths(Paths, Opts: TStrings; AsUnitPath, asIncludePath: Boolean);
     procedure SetPlatformDefaults(CodeToolsOptions : TCodeToolsOptions);
     procedure ApplyConfigSettings(CodeToolsOptions: TCodeToolsOptions);
     procedure FindPascalSourceDirectories(RootPath: String; Results: TStrings; ExcludeFolders: TStrings);
-    Procedure ShowConfigStatus(Params : TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
+    procedure ShowConfigStatus(Params : TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
   public
     function Process(var Params : TLSPInitializeParams): TInitializeResult; override;
   end;
@@ -105,16 +107,15 @@ const
 
 procedure TInitialize.ApplyConfigSettings(CodeToolsOptions: TCodeToolsOptions);
 
-  function MaybeSet(aValue,aDefault : String) : String;
+  function MaybeSet(aValue, aDefault: String): String;
   begin
     Result:=aValue;
     if Result='' then
       Result:=aDefault;
   end;
 
-Var
-  env : TConfigEnvironmentSettings;
-
+var
+  env: TConfigEnvironmentSettings;
 begin
   env:=EnvironmentSettings;
   with CodeToolsOptions do
@@ -130,7 +131,7 @@ end;
 
 procedure TInitialize.SetPlatformDefaults(CodeToolsOptions: TCodeToolsOptions);
 begin
-  // Compile time defaults/
+  // Compile time defaults
   CodeToolsOptions.TargetOS := {$i %FPCTARGETOS%};
   CodeToolsOptions.TargetProcessor := {$i %FPCTARGETCPU%};
 
@@ -151,36 +152,31 @@ begin
   CodeToolsOptions.LazarusSrcDir := '/usr/local/share/lazsrc';
   {$endif}
   {$endif}
-
 end;
 
 { Find all sub directories which contain Pascal source files }
 
-Function TInitialize.IsPasExt(Const aExtension : String) : Boolean;
-
+function TInitialize.IsPasExt(Const aExtension: String): Boolean;
 var
   E : String;
-
 begin
-  E:=LowerCase(aExtension);
-  result:=(E = '.pas') or (E = '.pp') or (E = '.inc');
+  E := LowerCase(aExtension);
+  result := (E = '.pas') or (E = '.pp') or (E = '.inc');
 end;
 
-
-Procedure TInitialize.DoLog(const Msg : String);
+procedure TInitialize.DoLog(const Msg: String);
 begin
   Transport.SendDiagnostic(Msg);
 end;
 
-
-Procedure TInitialize.DoLog(const Fmt : String; Const args : Array of const);
+procedure TInitialize.DoLog(const Fmt: String; const args: Array of const);
 begin
-  Transport.SendDiagnostic(Fmt,Args);
+  Transport.SendDiagnostic(Fmt, Args);
 end;
 
-Procedure TInitialize.DoLog(const Msg : String; aBool : Boolean);
+procedure TInitialize.DoLog(const Msg: String; aBool: Boolean);
 begin
-  Transport.SendDiagnostic(Msg+BoolToStr(aBool,'True','False'));
+  Transport.SendDiagnostic(Msg+BoolToStr(aBool, 'True', 'False'));
 end;
 
 function TInitialize.IsPathExcluded(const aPath: String; ExcludeFolders: TStrings): Boolean;
@@ -191,7 +187,7 @@ var
 begin
   Result := False;
   if (ExcludeFolders = nil) or (ExcludeFolders.Count = 0) then
-    Exit;
+    exit;
 
   NormalizedPath := ExcludeTrailingPathDelimiter(aPath);
 
@@ -202,7 +198,7 @@ begin
       if (Pos(NormalizedExclude, NormalizedPath) = 1) then
         begin
           Result := True;
-          Exit;
+          exit;
         end;
     end;
 end;
@@ -320,12 +316,9 @@ begin
     end;
 end;
 
-
-procedure TInitialize.SetFPCPaths(Paths,Opts: TStrings; AsUnitPath,asIncludePath : Boolean);
-
+procedure TInitialize.SetFPCPaths(Paths,Opts: TStrings; AsUnitPath, asIncludePath: Boolean);
 var
   aPath : String;
-
 begin
   for aPath in Paths do
     begin
@@ -337,22 +330,20 @@ begin
     end;
 end;
 
-function TInitialize.CheckProgramSetting : Boolean;
-
+function TInitialize.CheckProgramSetting: Boolean;
 Var
-  aPath : String;
-
+  aPath: String;
 begin
-  aPath:=ServerSettings.&program;
+  aPath := ServerSettings.&program;
   if aPath = '' then
     exit(False);
-  aPath:=ExpandFileName(aPath);
-  Result:=FileExists(aPath);
+  aPath := ExpandFileName(aPath);
+  Result := FileExists(aPath);
   if Result then
     ServerSettings.&program := aPath
   else
     begin
-      DoLog(kFailedPrefix+'Main program file '+ aPath+ ' can''t be found.');
+      DoLog(kFailedPrefix+'Main program file '+ aPath + ' can''t be found.');
       ServerSettings.&program := '';
     end;
 end;
@@ -575,8 +566,6 @@ begin
   // not supported
 end;
 
-
-
 procedure TServerCapabilitiesHelper.ApplySettings(settings: TServerSettings);
 begin
   if not Assigned(Settings) then
@@ -591,6 +580,9 @@ begin
   implementationProvider := true;
   referencesProvider := true;
   documentHighlightProvider := true;
+
+  // NOTE: inlay hints are disabled because they were performing poorly
+  // and I felt like they were unsable in real use.
   // finlayHintProvider:= TInlayHintOptions.Create;
 
   documentSymbolProvider := Assigned(SymbolManager);
