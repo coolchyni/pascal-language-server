@@ -292,10 +292,12 @@ begin
   else
     DoLog( kStatusPrefix+'ProjectDir: [unspecified]');
 
+  {$IFDEF USE_SQLITE}
   if ServerSettings.symbolDatabase <> '' then
     DoLog( kStatusPrefix+'Symbol Database: ' + ServerSettings.symbolDatabase)
   else
     DoLog( kStatusPrefix+'Symbol Database: [unspecified]');
+  {$ENDIF}
 
   // other settings
   DoLog(kStatusPrefix+'Settings:');

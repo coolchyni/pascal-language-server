@@ -76,7 +76,9 @@ type
   private
     fBooleans: array[0..32] of Boolean;
     fProgram: String;
+    {$IFDEF USE_SQLITE}
     fSymbolDatabase: String;
+    {$ENDIF}
     fFPCOptions: TStrings;
     fExcludeWorkspaceFolders: TStrings;
     fCodeToolsConfig: String;
@@ -94,8 +96,10 @@ type
     // Path to the main program file for resolving references
     // if not available the path of the current document will be used
     property &program: String read fProgram write fProgram;
-    // Path to SQLite3 database for symbols
+    {$IFDEF USE_SQLITE}
+    // Path to SQLite3 database for symbols (requires USE_SQLITE compile switch)
     property symbolDatabase: String read fSymbolDatabase write fSymbolDatabase;
+    {$ENDIF}
     // FPC compiler options (passed to Code Tools)
     property fpcOptions: TStrings read fFPCOptions write SetFPCOptions;
     // Optional codetools.config file to load settings from
@@ -270,7 +274,9 @@ var
   I: integer;
 begin
   &program := ReplaceMacro(&program);
+  {$IFDEF USE_SQLITE}
   symbolDatabase := ReplaceMacro(symbolDatabase);
+  {$ENDIF}
 
   for I := 0 to fpcOptions.Count - 1 do
     begin
@@ -290,7 +296,9 @@ begin
     begin
     fBooleans:=Src.FBooleans;
     fProgram:=Src.fProgram;;
+    {$IFDEF USE_SQLITE}
     SymbolDatabase:=Src.SymbolDatabase;
+    {$ENDIF}
     FPCOptions:=Src.fpcOptions;
     ExcludeWorkspaceFolders:=Src.ExcludeWorkspaceFolders;
     CodeToolsConfig:=Src.CodeToolsConfig;
@@ -355,7 +363,9 @@ class function TServerSettings.GetPropertyDescription(const PropName: String): S
 begin
   case PropName of
     'program': Result := 'Path to the main program file for resolving references';
-    'symbolDatabase': Result := 'Path to SQLite3 database for symbols';
+    {$IFDEF USE_SQLITE}
+    'symbolDatabase': Result := 'Path to SQLite3 database for symbols (requires USE_SQLITE)';
+    {$ENDIF}
     'fpcOptions': Result := 'FPC compiler options (passed to Code Tools)';
     'codeToolsConfig': Result := 'Optional codetools.config file to load settings from';
     'maximumCompletions': Result := 'Maximum number of completion items to be returned';
@@ -395,7 +405,9 @@ begin
   fExcludedSymbolSet := [];
 
   // default settings
+  {$IFDEF USE_SQLITE}
   symbolDatabase := '';
+  {$ENDIF}
   maximumCompletions := 200;
   overloadPolicy := TOverloadPolicy.Suffix;
   // default file patterns for workspace scanning

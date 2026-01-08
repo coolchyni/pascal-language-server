@@ -22,10 +22,17 @@ unit PasLS.Symbols;
 {$mode objfpc}{$H+}
 {define SYMBOL_DEBUG}
 
+// Define USE_SQLITE to enable SQLite database support for workspace symbols.
+// Comment out the following line to build without SQLite dependency.
+{.$DEFINE USE_SQLITE}
+
 interface
 uses
   { RTL }
-  Classes, Contnrs, fpjson, fpjsonrpc, SQLite3,
+  Classes, Contnrs, fpjson, fpjsonrpc,
+  {$IFDEF USE_SQLITE}
+  SQLite3,
+  {$ENDIF}
   { Code Tools }
   CodeToolManager, CodeCache, CodeTree, LinkScanner,
   { Protocols }
@@ -180,6 +187,7 @@ type
     destructor Destroy; override;
   end;
 
+  {$IFDEF USE_SQLITE}
   { TSQLiteDatabase }
 
   TSQLiteDatabase = class
@@ -207,9 +215,9 @@ type
     { Symbols }
     function FindAllSymbols(Path: String): TJSONSerializedArray;
     function FindSymbols(Query: String): TJSONSerializedArray;
-    procedure ClearSymbols(Path: String); 
-    procedure InsertSymbol(Symbol: TSymbol); 
-    procedure InsertSymbols(Collection: TSymbolItems; StartIndex, EndIndex: Integer); 
+    procedure ClearSymbols(Path: String);
+    procedure InsertSymbol(Symbol: TSymbol);
+    procedure InsertSymbols(Collection: TSymbolItems; StartIndex, EndIndex: Integer);
 
     { Files }
     procedure TouchFile(Path: String);
@@ -218,6 +226,7 @@ type
     procedure RemoveFile(Path: String);
     Property Transport : TMessageTransport Read FTransport Write FTransport;
   end;
+  {$ENDIF}
 
   { TSymbolManager }
 
@@ -226,15 +235,21 @@ type
     fTransport: TMessageTransport;
     SymbolTable: TFPHashObjectList;
     ErrorList: TStringList;
+    {$IFDEF USE_SQLITE}
     fDatabase: TSymbolDatabase;
+    {$ENDIF}
     fWorkspacePaths: TStringList;
 
     function Load(Path: String): TCodeBuffer;
     procedure AddError(Message: String);
     function GetEntry(Code: TCodeBuffer): TSymbolTableEntry;
+    {$IFDEF USE_SQLITE}
     function GetDatabase: TSymbolDatabase;
+    {$ENDIF}
     procedure setTransport(AValue: TMessageTransport);
+    {$IFDEF USE_SQLITE}
     property Database: TSymbolDatabase read GetDatabase;
+    {$ENDIF}
   Protected
     Procedure DoLog(const Msg : String); overload;
     Procedure DoLog(const Fmt : String; const Args : Array of const); overload;
@@ -967,6 +982,7 @@ begin
             end;
 
           // Insert symbols into database if available
+          {$IFDEF USE_SQLITE}
           if SymbolManager.Database <> nil then
             begin
               Next := 0;
@@ -981,12 +997,15 @@ begin
                   Start := Next + 1;
                 end;
             end;
+          {$ENDIF}
         finally
           SerializedItems.Free;
+          {$IFDEF USE_SQLITE}
           // Clear Symbols to free memory if database is available
           // (workspace/symbol will use Database.FindSymbols instead of in-memory symbols)
           if SymbolManager.Database <> nil then
             FEntry.Symbols.Clear;
+          {$ENDIF}
         end;
       end;
   end;
@@ -995,9 +1014,12 @@ end;
 { TSymbolTableEntry }
 
 function TSymbolTableEntry.GetRawJSON: String;
+{$IFDEF USE_SQLITE}
 var
   JSON: TJSONSerializedArray;
+{$ENDIF}
 begin
+  {$IFDEF USE_SQLITE}
   if (fRawJSON = '') and (SymbolManager.Database <> nil) then
     begin
       JSON := SymbolManager.Database.FindAllSymbols(Code.FileName);
@@ -1007,6 +1029,7 @@ begin
         JSON.Free;
       end;
     end;
+  {$ENDIF}
   Result := fRawJSON;
 end;
 
@@ -1016,13 +1039,15 @@ begin
 end;
 
 function TSymbolTableEntry.RequestReload: boolean;
+{$IFDEF USE_SQLITE}
 var
   Database: TSymbolDatabase;
   Path: String;
-
+{$ENDIF}
 begin
   if Modified then
     exit(true);
+  {$IFDEF USE_SQLITE}
   Database := SymbolManager.Database;
   Path := Code.FileName;
   Result := false;
@@ -1038,6 +1063,9 @@ begin
     end
   else
     Result := true;
+  {$ELSE}
+  Result := true;
+  {$ENDIF}
 end;
 
 function TSymbolTableEntry.AddSymbol(Name: String; Kind: TSymbolKind; FileName: String; Line, Column: Integer;EndLine,EndCol: Integer): TSymbol;
@@ -1058,11 +1086,13 @@ begin
 end;
 
 procedure TSymbolTableEntry.SerializeSymbols;
+{$IFDEF USE_SQLITE}
 const
   BATCH_COUNT = 1000;
+{$ENDIF}
 var
   SerializedItems: TJSONArray;
-  i, Start, Next, Total: Integer;
+  i{$IFDEF USE_SQLITE}, Start, Next, Total{$ENDIF}: Integer;
   Symbol: TSymbol;
 begin
   SerializedItems := specialize TLSPStreaming<TSymbolItems>.ToJSON(Symbols) as TJSONArray;
@@ -1073,6 +1103,7 @@ begin
         Symbol.RawJSON := SerializedItems[i].AsJson;
       end;
 
+    {$IFDEF USE_SQLITE}
     // if a database is available then insert serialized symbols in batches
     if SymbolManager.Database <> nil then
       begin
@@ -1088,14 +1119,17 @@ begin
             Start := Next + 1;
           end;
       end;
+    {$ENDIF}
 
     fRawJSON := SerializedItems.AsJSON;
   Finally
     SerializedItems.Free;
+    {$IFDEF USE_SQLITE}
     // Clear Symbols to free memory if database is available
     // (workspace/symbol will use Database.FindSymbols instead of in-memory symbols)
     if SymbolManager.Database <> nil then
       Symbols.Clear;
+    {$ENDIF}
   end;
 end;
 
@@ -1103,8 +1137,10 @@ procedure TSymbolTableEntry.Clear;
 begin
   Modified := false;
   Symbols.Clear;
+  {$IFDEF USE_SQLITE}
   if (SymbolManager.Database <> nil) and (Code <> nil) then
     SymbolManager.Database.ClearSymbols(Code.FileName);
+  {$ENDIF}
 end;
 
 destructor TSymbolTableEntry.Destroy; 
@@ -1174,7 +1210,9 @@ end;
 function TSymbolExtractor.AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind; Name: String; Container: String): TSymbol;
 var
   CodePos, EndPos: TCodeXYPosition;
+  {$IFDEF USE_SQLITE}
   FileName: String;
+  {$ENDIF}
 begin
   {$ifdef SYMBOL_DEBUG}
   writeln(IndentLevelString(IndentLevel + 1), '* ', Name);
@@ -1186,6 +1224,7 @@ begin
   // Adjust EndPos for LSP Range specification (end position must be exclusive)
   AdjustEndPosition(Node, EndPos);
 
+  {$IFDEF USE_SQLITE}
   // clear existing symbols in symbol database
   // we don't know which include files are associated
   // with each unit so we need to check each time
@@ -1199,6 +1238,7 @@ begin
           RelatedFiles.Add(FileName, @CodePos);
         end;
     end;
+  {$ENDIF}
 
   Result := Entry.AddSymbol(Name, Kind, CodePos.Code.FileName, CodePos.Y, CodePos.X, EndPos.Y,EndPos.X);
 end;
@@ -1696,9 +1736,10 @@ begin
   inherited;
 end;
 
+{$IFDEF USE_SQLITE}
 { TSQLiteDatabase }
 
-procedure TSQLiteDatabase.LogError(errmsg: pansichar); 
+procedure TSQLiteDatabase.LogError(errmsg: pansichar);
 begin
 end;
 
@@ -1964,26 +2005,31 @@ begin
   Exec(CREATE_SYMBOL_TABLE);
   Exec(CREATE_ENTRY_TABLE);
 end;
+{$ENDIF USE_SQLITE}
 
 { TSymbolManager }
 
+{$IFDEF USE_SQLITE}
 function TSymbolManager.GetDatabase: TSymbolDatabase;
 begin
-  if (fDatabase = nil) and 
-    (ServerSettings.symbolDatabase <> '') then 
+  if (fDatabase = nil) and
+    (ServerSettings.symbolDatabase <> '') then
     begin
     fDatabase := TSymbolDatabase.Create(ExpandFileName(ServerSettings.symbolDatabase));
     fDatabase.Transport:=fTransport;
     end;
   Result := fDatabase;
 end;
+{$ENDIF}
 
 procedure TSymbolManager.setTransport(AValue: TMessageTransport);
 begin
   if fTransport=AValue then Exit;
   fTransport:=AValue;
+  {$IFDEF USE_SQLITE}
   if assigned(fDatabase) then
     fDatabase.Transport:=fTransport;
+  {$ENDIF}
 end;
 
 procedure TSymbolManager.DoLog(const Msg: String);
@@ -2006,9 +2052,11 @@ begin
   Entry := TSymbolTableEntry(SymbolTable.Find(FileName));
   if Entry <> nil then
     begin
+    {$IFDEF USE_SQLITE}
     // Remove file from database (both symbols and entries tables)
     if (Database <> nil) and (Entry.Code <> nil) then
       Database.RemoveFile(Entry.Code.FileName);
+    {$ENDIF}
 
     // Remove entry from in-memory symbol table
     Index := SymbolTable.FindIndexOf(FileName);
@@ -2019,7 +2067,9 @@ end;
 
 procedure TSymbolManager.UnloadFile(FileName: String);
 var
+  {$IFDEF USE_SQLITE}
   Index: Integer;
+  {$ENDIF}
   Entry: TSymbolTableEntry;
 begin
   Entry := TSymbolTableEntry(SymbolTable.Find(FileName));
@@ -2028,6 +2078,7 @@ begin
   if Entry = nil then
     Exit;
 
+  {$IFDEF USE_SQLITE}
   if Database <> nil then
     begin
     // With database: just remove from memory, symbols stay in DB
@@ -2036,6 +2087,7 @@ begin
       SymbolTable.Delete(Index);  // Frees TSymbolTableEntry
     end
   else
+  {$ENDIF}
     begin
     // Without database: keep entry for workspace/symbol queries
     // Mark as unloaded so we know the file is closed
@@ -2056,9 +2108,11 @@ end;
 
 function TSymbolManager.FindWorkspaceSymbols(Query: String): TJSONSerializedArray;
 begin
+  {$IFDEF USE_SQLITE}
   if Database <> nil then
     result := Database.FindSymbols(Query)
   else
+  {$ENDIF}
     result := CollectSerializedSymbols(Query);
 end;
 
@@ -2323,7 +2377,9 @@ end;
 
 destructor TSymbolManager.Destroy;
 begin
+  {$IFDEF USE_SQLITE}
   FreeAndNil(fDatabase);
+  {$ENDIF}
   FreeAndNil(fWorkspacePaths);
   ErrorList.Free;
   SymbolTable.Free;
