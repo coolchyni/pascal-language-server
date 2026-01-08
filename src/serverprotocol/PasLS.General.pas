@@ -109,22 +109,22 @@ procedure TInitialize.ApplyConfigSettings(CodeToolsOptions: TCodeToolsOptions);
 
   function MaybeSet(aValue, aDefault: String): String;
   begin
-    Result:=aValue;
-    if Result='' then
-      Result:=aDefault;
+    Result := aValue;
+    if Result = '' then
+      Result := aDefault;
   end;
 
 var
   env: TConfigEnvironmentSettings;
 begin
-  env:=EnvironmentSettings;
+  env := EnvironmentSettings;
   with CodeToolsOptions do
     begin
-      FPCPath:=MaybeSet(Env.pp,FPCPath);
-      FPCSrcDir:=MaybeSet(Env.fpcDir,FPCSrcDir);
-      LazarusSrcDir:=MaybeSet(Env.lazarusDir,LazarusSrcDir);
-      TargetOS:=MaybeSet(Env.fpcTarget,TargetOS);
-      TargetProcessor:=MaybeSet(Env.fpcTargetCPU,TargetProcessor);
+      FPCPath := MaybeSet(Env.pp, FPCPath);
+      FPCSrcDir := MaybeSet(Env.fpcDir, FPCSrcDir);
+      LazarusSrcDir := MaybeSet(Env.lazarusDir, LazarusSrcDir);
+      TargetOS := MaybeSet(Env.fpcTarget, TargetOS);
+      TargetProcessor := MaybeSet(Env.fpcTargetCPU, TargetProcessor);
     end;
 end;
 
