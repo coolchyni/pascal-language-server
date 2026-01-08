@@ -24,11 +24,7 @@ unit PasLS.General;
 {$modeswitch arrayoperators}
 
 interface
-
 uses
-  {$ifdef FreePascalMake}
-  FPMConfig, FPMUtils,
-  {$endif}
   { RTL }
   Classes, URIParser, typinfo,
   { Code Tools }
@@ -38,9 +34,7 @@ uses
   { Utils }
   PasLS.Settings, PasLS.Symbols, PasLS.Commands, PasLS.LazConfig;
 
-
 Type
-
   TServerCapabilitiesHelper = class helper for TServerCapabilities
     procedure ApplySettings(settings: TServerSettings);
   end;
@@ -57,8 +51,7 @@ Type
   TInitialize = class(specialize TLSPRequest<TLSPInitializeParams, TInitializeResult>)
   private
     function CheckProgramSetting: Boolean;
-    procedure CollectWorkSpacePaths(WorkspaceFolders: TWorkspaceFolderItems;
-      aPaths: TStrings; ExcludeFolders: TStrings);
+    procedure CollectWorkSpacePaths(WorkspaceFolders: TWorkspaceFolderItems; aPaths: TStrings; ExcludeFolders: TStrings);
     procedure DoLog(const Msg: String);
     procedure DoLog(const Fmt: String; const args: array of const);
     procedure DoLog(const Msg: String; aBool: Boolean);
@@ -68,8 +61,8 @@ Type
     procedure SetPlatformDefaults(CodeToolsOptions : TCodeToolsOptions);
     procedure ApplyConfigSettings(CodeToolsOptions: TCodeToolsOptions);
     procedure FindPascalSourceDirectories(RootPath: String; Results: TStrings; ExcludeFolders: TStrings);
-    Procedure ShowConfigStatus(Params : TInitializeParams; Paths: TStrings; CodeToolsOptions: TCodeToolsOptions);
-  Public
+    Procedure ShowConfigStatus(Params : TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
+  public
     function Process(var Params : TLSPInitializeParams): TInitializeResult; override;
   end;
 
@@ -98,10 +91,9 @@ Type
   end;
 
 implementation
-
 uses
-  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates, PasLS.ClientProfile;
-
+  SysUtils, RegExpr, IdentCompletionTool, DefineTemplates,
+  PasLS.ClientProfile, PasLS.CodeUtils;
 
 const
   kStatusPrefix = '✓ ';
@@ -111,11 +103,9 @@ const
 
 { TInitialize }
 
-
 procedure TInitialize.ApplyConfigSettings(CodeToolsOptions: TCodeToolsOptions);
 
   function MaybeSet(aValue,aDefault : String) : String;
-
   begin
     Result:=aValue;
     if Result='' then
@@ -207,7 +197,7 @@ begin
 
   for ExcludePath in ExcludeFolders do
     begin
-      NormalizedExclude := ExcludeTrailingPathDelimiter(ExcludePath);
+      NormalizedExclude := ExcludeTrailingPathDelimiter(ExpandFileName(ExcludePath));
       // Check if the path starts with the excluded path
       if (Pos(NormalizedExclude, NormalizedPath) = 1) then
         begin
@@ -217,86 +207,88 @@ begin
     end;
 end;
 
-
 procedure TInitialize.FindPascalSourceDirectories(RootPath: String; Results: TStrings; ExcludeFolders: TStrings);
-
 var
-  Info : TSearchRec;
-  havePas : Boolean;
+  Info: TSearchRec;
+  havePas: Boolean;
   SubDirPath: String;
-
 begin
   // Skip this directory if it's excluded
   if IsPathExcluded(RootPath, ExcludeFolders) then
-    Exit;
+    exit;
 
   havePas:=False;
-  If FindFirst(RootPath+AllFilesMask,faAnyFile,Info)=0 then
+  if FindFirst(RootPath+AllFilesMask, faAnyFile, Info) = 0 then
     try
-      Repeat
-        if ((Info.Attr and faDirectory)<>0) and Not ((Info.Name='.') or (Info.Name='..')) then
+      repeat
+        if ((Info.Attr and faDirectory) <> 0) and not((Info.Name = '.') or (Info.Name = '..')) then
           begin
             SubDirPath := IncludeTrailingPathDelimiter(RootPath+Info.Name);
             // Only recurse if the subdirectory is not excluded
             if not IsPathExcluded(SubDirPath, ExcludeFolders) then
               FindPascalSourceDirectories(SubDirPath, Results, ExcludeFolders);
           end;
+
         if IsPasExt(ExtractFileExt(Info.Name)) then
-          HavePas:=True;
-      until (FindNext(Info)<>0);
+          HavePas := true;
+      until FindNext(Info) <> 0;
     finally
-      FindClose(Info)
+      FindClose(Info);
     end;
+
   if HavePas then
-    if Results.IndexOf(RootPath)=-1 then
+    if Results.IndexOf(RootPath) = -1 then
       Results.Add(RootPath);
 end;
 
-procedure TInitialize.CollectWorkSpacePaths(WorkspaceFolders : TWorkspaceFolderItems; aPaths : TStrings; ExcludeFolders: TStrings);
-
-Var
+procedure TInitialize.CollectWorkSpacePaths(WorkspaceFolders: TWorkspaceFolderItems; aPaths: TStrings; ExcludeFolders: TStrings);
+var
   Item: TCollectionItem;
-
 begin
   for Item in workspaceFolders do
     FindPascalSourceDirectories(IncludeTrailingPathDelimiter(UriToPath(TWorkspaceFolder(Item).uri)), aPaths, ExcludeFolders);
 end;
 
-
-procedure TInitialize.ShowConfigStatus(Params : TInitializeParams; Paths: TStrings; CodeToolsOptions: TCodeToolsOptions);
+procedure TInitialize.ShowConfigStatus(Params: TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
 var
   Profile: TClientProfile;
   Feature: TClientFeature;
-  FeatureList, aPath: String;
+  FeatureList, Option: String;
+  FPCOptions: TStringArray;
 begin
-  DoLog( kStatusPrefix+'Server: ' + {$INCLUDE %DATE%});
-  DoLog( kStatusPrefix+'Client: ' + Params.clientInfo.name + ' ' + Params.clientInfo.version);
+  DoLog(kStatusPrefix+'Server: ' + {$INCLUDE %DATE%});
+  DoLog(kStatusPrefix+'Client: ' + Params.clientInfo.name + ' ' + Params.clientInfo.version);
 
-  DoLog( kStatusPrefix+'FPCPath: ' + CodeToolsOptions.FPCPath);
-  DoLog( kStatusPrefix+'FPCSrcDir: ' + CodeToolsOptions.FPCSrcDir);
-  DoLog( kStatusPrefix+'LazarusSrcDir: ' + CodeToolsOptions.LazarusSrcDir);
-  DoLog( kStatusPrefix+'TargetOS: ' + CodeToolsOptions.TargetOS);
-  DoLog( kStatusPrefix+'TargetProcessor: '+ CodeToolsOptions.TargetProcessor);
+  DoLog(kStatusPrefix+'FPCPath: ' + CodeToolsOptions.FPCPath);
+  DoLog(kStatusPrefix+'FPCSrcDir: ' + CodeToolsOptions.FPCSrcDir);
+  DoLog(kStatusPrefix+'LazarusSrcDir: ' + CodeToolsOptions.LazarusSrcDir);
+  DoLog(kStatusPrefix+'TargetOS: ' + CodeToolsOptions.TargetOS);
+  DoLog(kStatusPrefix+'TargetProcessor: '+ CodeToolsOptions.TargetProcessor);
 
-  DoLog( kStatusPrefix+'Working directory: ' + GetCurrentDir);
+  DoLog(kStatusPrefix+'Working directory: ' + GetCurrentDir);
 
   if CodeToolsOptions.FPCOptions <> '' then
-    DoLog( kStatusPrefix+'FPCOptions: '+CodeToolsOptions.FPCOptions)
+    begin
+      DoLog(kStatusPrefix+'FPCOptions:');
+      FPCOptions := SplitString(CodeToolsOptions.FPCOptions, ' ');
+      for Option in FPCOptions do
+        DoLog('  '+Option);
+    end
   else
-    DoLog( kStatusPrefix+'FPCOptions: [unspecified]');
+    DoLog(kStatusPrefix+'FPCOptions: [unspecified]');
 
   if ServerSettings.&program <> '' then
-    DoLog( kStatusPrefix+'Main program file: ' + ServerSettings.&program);
+    DoLog(kStatusPrefix+'Main program file: ' + ServerSettings.&program);
 
   if CodeToolsOptions.ProjectDir <> '' then
-    DoLog( kStatusPrefix+'ProjectDir: ' + CodeToolsOptions.ProjectDir)
+    DoLog(kStatusPrefix+'ProjectDir: ' + CodeToolsOptions.ProjectDir)
   else
-    DoLog( kStatusPrefix+'ProjectDir: [unspecified]');
+    DoLog(kStatusPrefix+'ProjectDir: [unspecified]');
 
   if ServerSettings.symbolDatabase <> '' then
-    DoLog( kStatusPrefix+'Symbol Database: ' + ServerSettings.symbolDatabase)
+    DoLog(kStatusPrefix+'Symbol Database: ' + ServerSettings.symbolDatabase)
   else
-    DoLog( kStatusPrefix+'Symbol Database: [unspecified]');
+    DoLog(kStatusPrefix+'Symbol Database: [unspecified]');
 
   // other settings
   DoLog(kStatusPrefix+'Settings:');
@@ -326,10 +318,6 @@ begin
         end;
       DoLog(kStatusPrefix+'Client Features: ' + FeatureList);
     end;
-
-  DoLog(kStatusPrefix+'Workspace paths (%d):',[Paths.Count]);
-  for aPath in Paths do
-    DoLog(kEmptyPrefix+'  %s',[aPath]);
 end;
 
 
@@ -370,36 +358,38 @@ begin
 end;
 
 function TInitialize.Process(var Params : TLSPInitializeParams): TInitializeResult;
-
-
 var
   Proj, Option, aPath, ConfigPath: String;
   CodeToolsOptions: TCodeToolsOptions;
-  re: TRegExpr;
+  PathSwitchRegex: TRegExpr;
   Macros: TMacroMap;
-  Paths: TStringList;
-  RootPath,IncludePathTemplate,UnitPathTemplate: TDefineTemplate;
-  opt : TServerSettings;
-
+  WorkspacePaths: TStringList;
+  RootPath, IncludePathTemplate, UnitPathTemplate: TDefineTemplate;
+  Opt: TServerSettings;
+  FPCOptions: TStringArray;
 begin
   if Params.initializationOptions is TServerSettings then
-    Opt:=TServerSettings(Params.initializationOptions)
+    Opt := TServerSettings(Params.initializationOptions)
   else
-    Opt:=Nil;
+    Opt := nil;
+
   Result := TInitializeResult.Create;
-  CodeToolsOptions:=nil;
-  Re:=nil;
-  Paths:=Nil;
-  Macros:=nil;
+  CodeToolsOptions := nil;
+  PathSwitchRegex := nil;
+  WorkspacePaths := nil;
+  Macros := nil;
+  FPCOptions := [];
+
   try
     Macros := TMacroMap.Create;
     CodeToolsOptions := TCodeToolsOptions.Create;
-    re := TRegExpr.Create('^(-(Fu|Fi)+)(.*)$');
-    Paths:=TStringList.Create;
-    Paths.StrictDelimiter:=True;
-    Paths.Delimiter:=';';
-    Paths.Sorted:=True;
-    Paths.Duplicates:=dupIgnore;
+    PathSwitchRegex := TRegExpr.Create('^(-(Fu|Fi)+)(.*)$');
+    
+    WorkspacePaths := TStringList.Create;
+    WorkspacePaths.StrictDelimiter := true;
+    WorkspacePaths.Delimiter := ';';
+    WorkspacePaths.Sorted := false;
+    WorkspacePaths.Duplicates := dupIgnore;
 
     Result.capabilities.executeCommandProvider.commands.Clear;
     CommandFactory.GetCommandList(Result.capabilities.executeCommandProvider.commands);
@@ -415,7 +405,8 @@ begin
        (ServerSettings.clientProfileDisableFeatures.Count > 0) then
       TClientProfile.ApplyOverrides(
         ServerSettings.clientProfileEnableFeatures,
-        ServerSettings.clientProfileDisableFeatures);
+        ServerSettings.clientProfileDisableFeatures
+      );
 
     // Detect hierarchical document symbol support
     if Assigned(Params.capabilities) and
@@ -458,64 +449,72 @@ begin
       FPCTARGETCPU = FPC target cpu like i386, x86_64, arm }
     CodeToolsOptions.InitWithEnvironmentVariables;
 
-    GuessCodeToolConfig(Transport,CodeToolsOptions);
+    GuessCodeToolConfig(Transport, CodeToolsOptions);
     if Assigned(Opt) then
-      Proj:=Opt.&program;
-    if (Proj<>'') and FileExists(Proj) then
-      ConfigureSingleProject(Transport,Proj);
+      Proj := Opt.&program;
+    if (Proj <> '') and FileExists(Proj) then
+      ConfigureSingleProject(Transport, Proj);
 
     // load the symbol manager if it's enabled
     if ServerSettings.documentSymbols or ServerSettings.workspaceSymbols then
       begin
-      SymbolManager := TSymbolManager.Create;
-      SymbolManager.Transport := Transport;
-      Result.capabilities.documentSymbolProvider:=True;
-      Result.capabilities.workspaceSymbolProvider := ServerSettings.CanProvideWorkspaceSymbols;
+        SymbolManager := TSymbolManager.Create;
+        SymbolManager.Transport := Transport;
+        Result.capabilities.documentSymbolProvider:=True;
+        Result.capabilities.workspaceSymbolProvider := ServerSettings.CanProvideWorkspaceSymbols;
       end;
 
     // attempt to load optional config file
     if Assigned(Opt) then
       ConfigPath := ExpandFileName(Opt.CodeToolsConfig);
+
     if FileExists(ConfigPath) then
       begin
         DoLog('Loading config file: '+ ConfigPath);
         CodeToolsOptions.LoadFromFile(ConfigPath);
       end;
-    // include workspace paths as search paths
-    if ServerSettings.includeWorkspaceFoldersAsUnitPaths or
-       ServerSettings.includeWorkspaceFoldersAsIncludePaths then
-      begin
-        CollectWorkSpacePaths(Params.workspaceFolders, Paths, ServerSettings.excludeWorkspaceFolders);
-      end;
-    // Add the in order specified
-    Paths.Sorted:=False;
+
+    CollectWorkSpacePaths(Params.workspaceFolders, WorkspacePaths, ServerSettings.excludeWorkspaceFolders);
+
+    // Add the paths in order specified
     if Assigned(Opt) then
       for Option in Opt.FPCOptions do
         begin
-          // expand file names in switches with paths
-          if re.Exec(Option) then
+          // Add paths from path switches to workspace paths
+          if PathSwitchRegex.Exec(Option) then
             begin
-            if Paths.IndexOf(re.Match[3])=-1 then
-              Paths.Add(re.Match[3])
+              if WorkspacePaths.IndexOf(PathSwitchRegex.Match[3]) = -1 then
+                WorkspacePaths.Add(PathSwitchRegex.Match[3]);
             end;
-          //else
-            CodeToolsOptions.FPCOptions := CodeToolsOptions.FPCOptions + Option + ' ';
+          FPCOptions += [Option];
         end;
 
+    // include workspace paths as search paths
+    for aPath in WorkspacePaths do
+      begin
+        if ServerSettings.includeWorkspaceFoldersAsUnitPaths then
+          FPCOptions += ['-Fu' + ExpandFileName(aPath)];
+
+        if ServerSettings.includeWorkspaceFoldersAsIncludePaths then
+          FPCOptions += ['-Fi' + ExpandFileName(aPath)];
+      end;
+
+    CodeToolsOptions.FPCOptions := JoinString(FPCOptions, ' ');
+
+    // Scan workspace for symbols
     if Result.Capabilities.workspaceSymbolProvider then
       begin
-      // Store workspace paths in SymbolManager for IsFileInWorkspace checks
-      SymbolManager.WorkspacePaths.Clear;
-      for aPath in Paths do
-        begin
-        SymbolManager.WorkspacePaths.Add(SymbolManager.NormalizePath(aPath));
-        SymbolManager.Scan(aPath, false);
-        end;
+        SymbolManager.WorkspacePaths.Clear;
+        for aPath in WorkspacePaths do
+          begin
+            SymbolManager.WorkspacePaths.Add(SymbolManager.NormalizePath(aPath));
+            SymbolManager.Scan(aPath, false);
+          end;
       end;
 
     CheckProgramSetting;
 
-    ShowConfigStatus(Params,Paths,CodeToolsOptions);
+    ShowConfigStatus(Params, CodeToolsOptions);
 
     with CodeToolBoss do
       begin
@@ -523,31 +522,29 @@ begin
         IdentifierList.SortForHistory := True;
         IdentifierList.SortMethodForCompletion:=icsScopedAlphabetic;
       end;
+
     Result.Capabilities.ApplySettings(ServerSettings);
+
     // Set search path for codetools.
-    RootPath:=TDefineTemplate.Create('RootPath','RootPath','',CodetoolsOptions.ProjectDir,da_Directory);
+    RootPath := TDefineTemplate.Create('RootPath', 'RootPath', '', CodetoolsOptions.ProjectDir, da_Directory);
     if ServerSettings.includeWorkspaceFoldersAsUnitPaths then
       begin
-      UnitPathTemplate:=TDefineTemplate.Create('RootUnitPath','RootUnitPath',UnitPathMacroName, UnitPathMacro+';'+Paths.DelimitedText, da_DefineRecurse);
-      RootPath.AddChild(UnitPathTemplate);
+        UnitPathTemplate := TDefineTemplate.Create('RootUnitPath', 'RootUnitPath', UnitPathMacroName, UnitPathMacro+';'+WorkspacePaths.DelimitedText, da_DefineRecurse);
+        RootPath.AddChild(UnitPathTemplate);
       end;
     if ServerSettings.includeWorkspaceFoldersAsIncludePaths then
       begin
-      IncludePathTemplate:=TDefineTemplate.Create('RootIncludePath','RootIncludePath',IncludePathMacroName, IncludePathMacro+';'+Paths.DelimitedText, da_DefineRecurse);
-      RootPath.AddChild(IncludePathTemplate);
+        IncludePathTemplate := TDefineTemplate.Create('RootIncludePath', 'RootIncludePath', IncludePathMacroName, IncludePathMacro+';'+WorkspacePaths.DelimitedText, da_DefineRecurse);
+        RootPath.AddChild(IncludePathTemplate);
       end;
     CodeToolBoss.DefineTree.Add(RootPath);
   finally
-    Paths.Free;
-    re.Free;
+    WorkspacePaths.Free;
+    PathSwitchRegex.Free;
     CodeToolsOptions.Free;
     Macros.Free;
   end;
 end;
-
-
-
-
 
 { TInitialized }
 

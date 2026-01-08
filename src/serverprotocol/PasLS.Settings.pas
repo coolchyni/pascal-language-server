@@ -342,8 +342,8 @@ begin
 
   // options
   insertCompletionsAsSnippets := true;
-  includeWorkspaceFoldersAsUnitPaths := true;
-  includeWorkspaceFoldersAsIncludePaths := true;
+  includeWorkspaceFoldersAsUnitPaths := false;
+  includeWorkspaceFoldersAsIncludePaths := false;
   documentSymbols := true;
   ignoreTextCompletions := true;
   workspaceSymbols := true;
