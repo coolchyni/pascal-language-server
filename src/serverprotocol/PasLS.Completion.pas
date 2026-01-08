@@ -120,14 +120,6 @@ begin
   end;
 end;
 
-procedure DoThis(i: Integer);
-begin
-end;
-
-procedure DoThis(i: Integer; s: String);
-begin
-end;
-
 function TCompletion.Process(var Params: TCompletionParams): TCompletionList;
 var
   Code: TCodeBuffer;
