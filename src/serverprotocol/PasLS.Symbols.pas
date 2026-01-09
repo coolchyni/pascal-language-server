@@ -2026,9 +2026,13 @@ procedure TSymbolManager.setTransport(AValue: TMessageTransport);
 begin
   if fTransport=AValue then Exit;
   fTransport:=AValue;
+  DoLog('[DEBUG] TSymbolManager.setTransport: Transport assigned');
   {$IFDEF USE_SQLITE}
+  DoLog('[DEBUG] TSymbolManager.setTransport: USE_SQLITE is defined');
   if assigned(fDatabase) then
     fDatabase.Transport:=fTransport;
+  {$ELSE}
+  DoLog('[DEBUG] TSymbolManager.setTransport: USE_SQLITE is NOT defined');
   {$ENDIF}
 end;
 
