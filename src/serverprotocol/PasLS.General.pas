@@ -523,11 +523,14 @@ begin
       // Store workspace paths in SymbolManager for IsFileInWorkspace checks
       DoLog('[DEBUG] Initialize.Process checkpoint 20: setting up workspace paths');
       SymbolManager.WorkspacePaths.Clear;
+      DoLog('[DEBUG] Initialize.Process checkpoint 20a: Paths.Count=' + IntToStr(Paths.Count));
       for aPath in Paths do
         begin
+        DoLog('[DEBUG] Initialize.Process checkpoint 21a: adding to WorkspacePaths');
         SymbolManager.WorkspacePaths.Add(SymbolManager.NormalizePath(aPath));
-        DoLog('[DEBUG] Initialize.Process checkpoint 21: scanning path ' + aPath);
+        DoLog('[DEBUG] Initialize.Process checkpoint 21b: scanning path ' + aPath);
         SymbolManager.Scan(aPath, false);
+        DoLog('[DEBUG] Initialize.Process checkpoint 21c: scan completed for ' + aPath);
         end;
       DoLog('[DEBUG] Initialize.Process checkpoint 22: workspace scanning done');
       end;

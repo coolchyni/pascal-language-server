@@ -2186,6 +2186,7 @@ var
   Patterns: String;
   I: Integer;
 begin
+  DoLog('[DEBUG] TSymbolManager.Scan: entry, Path=' + Path);
   // Convert TStrings to semicolon-delimited string for FindAllFiles
   Patterns := '';
   for I := 0 to ServerSettings.scanFilePatterns.Count - 1 do
@@ -2194,15 +2195,22 @@ begin
       Patterns := Patterns + ';';
     Patterns := Patterns + ServerSettings.scanFilePatterns[I];
   end;
+  DoLog('[DEBUG] TSymbolManager.Scan: patterns built');
 
   Files := TStringList.Create;
   try
+    DoLog('[DEBUG] TSymbolManager.Scan: calling FindAllFiles');
     FindAllFiles(Files, Path, Patterns, SearchSubDirs);
+    DoLog('[DEBUG] TSymbolManager.Scan: found ' + IntToStr(Files.Count) + ' files');
     for FileName in Files do
       Reload(FileName);
+    DoLog('[DEBUG] TSymbolManager.Scan: all files reloaded');
   finally
+    DoLog('[DEBUG] TSymbolManager.Scan: freeing Files list');
     Files.Free;
+    DoLog('[DEBUG] TSymbolManager.Scan: Files list freed');
   end;
+  DoLog('[DEBUG] TSymbolManager.Scan: exit');
 end;
 
 //type
