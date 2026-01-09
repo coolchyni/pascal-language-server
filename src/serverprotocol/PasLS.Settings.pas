@@ -65,6 +65,7 @@ const
 { Helper functions for TExcludableSymbol }
 function TryStrToExcludableSymbol(const S: string; out Symbol: TExcludableSymbol): Boolean;
 function ExcludableSymbolToStr(Symbol: TExcludableSymbol): string;
+function GetUSE_SQLITE_Status_Settings: String;
 
 type
 
@@ -477,6 +478,15 @@ begin
     end
   else
     inherited Assign(aSource);
+end;
+
+function GetUSE_SQLITE_Status_Settings: String;
+begin
+  {$IFDEF USE_SQLITE}
+  Result := 'YES';
+  {$ELSE}
+  Result := 'NO';
+  {$ENDIF}
 end;
 
 finalization

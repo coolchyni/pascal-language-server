@@ -386,6 +386,14 @@ var
 
 begin
   DoLog('[DEBUG] Initialize.Process checkpoint 1: entry');
+  // Log USE_SQLITE status for each unit to detect build inconsistency
+  {$IFDEF USE_SQLITE}
+  DoLog('[DEBUG] USE_SQLITE in PasLS.General: YES');
+  {$ELSE}
+  DoLog('[DEBUG] USE_SQLITE in PasLS.General: NO');
+  {$ENDIF}
+  DoLog('[DEBUG] USE_SQLITE in PasLS.Settings: ' + GetUSE_SQLITE_Status_Settings);
+  DoLog('[DEBUG] USE_SQLITE in PasLS.Symbols: ' + GetUSE_SQLITE_Status_Symbols);
   if Params.initializationOptions is TServerSettings then
     Opt:=TServerSettings(Params.initializationOptions)
   else

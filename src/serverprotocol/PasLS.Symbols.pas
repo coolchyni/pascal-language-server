@@ -300,6 +300,7 @@ procedure SetClientCapabilities(SupportsDocumentSymbol: Boolean);
   For section nodes, moves back one line to not include next section.
   For other nodes, moves forward one character to make end exclusive. }
 procedure AdjustEndPositionForLSP(Node: TCodeTreeNode; var EndPos: TCodeXYPosition);
+function GetUSE_SQLITE_Status_Symbols: String;
 
 implementation
 uses
@@ -2431,6 +2432,15 @@ begin
     if Copy(NormalizedFile, 1, Length(WorkspacePath)) = WorkspacePath then
       Exit(True);
     end;
+end;
+
+function GetUSE_SQLITE_Status_Symbols: String;
+begin
+  {$IFDEF USE_SQLITE}
+  Result := 'YES';
+  {$ELSE}
+  Result := 'NO';
+  {$ENDIF}
 end;
 
 finalization
