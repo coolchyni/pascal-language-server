@@ -385,27 +385,16 @@ var
   opt : TServerSettings;
 
 begin
-  DoLog('[DEBUG] Initialize.Process checkpoint 1: entry');
-  // Log USE_SQLITE status for each unit to detect build inconsistency
-  {$IFDEF USE_SQLITE}
-  DoLog('[DEBUG] USE_SQLITE in PasLS.General: YES');
-  {$ELSE}
-  DoLog('[DEBUG] USE_SQLITE in PasLS.General: NO');
-  {$ENDIF}
-  DoLog('[DEBUG] USE_SQLITE in PasLS.Settings: ' + GetUSE_SQLITE_Status_Settings);
-  DoLog('[DEBUG] USE_SQLITE in PasLS.Symbols: ' + GetUSE_SQLITE_Status_Symbols);
   if Params.initializationOptions is TServerSettings then
     Opt:=TServerSettings(Params.initializationOptions)
   else
     Opt:=Nil;
-  DoLog('[DEBUG] Initialize.Process checkpoint 2: initializationOptions checked');
   Result := TInitializeResult.Create;
   CodeToolsOptions:=nil;
   Re:=nil;
   Paths:=Nil;
   Macros:=nil;
   try
-    DoLog('[DEBUG] Initialize.Process checkpoint 3: creating helper objects');
     Macros := TMacroMap.Create;
     CodeToolsOptions := TCodeToolsOptions.Create;
     re := TRegExpr.Create('^(-(Fu|Fi)+)(.*)$');
@@ -415,17 +404,13 @@ begin
     Paths.Sorted:=True;
     Paths.Duplicates:=dupIgnore;
 
-    DoLog('[DEBUG] Initialize.Process checkpoint 4: getting command list');
     Result.capabilities.executeCommandProvider.commands.Clear;
     CommandFactory.GetCommandList(Result.capabilities.executeCommandProvider.commands);
 
-    DoLog('[DEBUG] Initialize.Process checkpoint 5: calling ServerSettings.Assign');
     ServerSettings.Assign(Params.initializationOptions);
-    DoLog('[DEBUG] Initialize.Process checkpoint 6: ServerSettings.Assign done');
     PasLS.Settings.ClientInfo.Assign(Params.ClientInfo);
 
     // Detect hierarchical document symbol support
-    DoLog('[DEBUG] Initialize.Process checkpoint 7: detecting client capabilities');
     if Assigned(Params.capabilities) and
        Assigned(Params.capabilities.textDocument) and
        Assigned(Params.capabilities.textDocument.documentSymbol) then
@@ -434,12 +419,10 @@ begin
       SetClientCapabilities(false);
 
     // replace macros in server settings
-    DoLog('[DEBUG] Initialize.Process checkpoint 8: replacing macros');
     Macros.Add('tmpdir', GetTempDir(true));
     Macros.Add('root', URIToPath(Params.rootUri));
 
     ServerSettings.ReplaceMacros(Macros);
-    DoLog('[DEBUG] Initialize.Process checkpoint 9: macros replaced');
 
     // set the project directory based on root URI path
     if Params.rootUri <> '' then
@@ -468,34 +451,22 @@ begin
       FPCTARGETCPU = FPC target cpu like i386, x86_64, arm }
     CodeToolsOptions.InitWithEnvironmentVariables;
 
-    DoLog('[DEBUG] Initialize.Process checkpoint 10: guessing codetools config');
     GuessCodeToolConfig(Transport,CodeToolsOptions);
     if Assigned(Opt) then
       Proj:=Opt.&program;
     if (Proj<>'') and FileExists(Proj) then
-      begin
-      DoLog('[DEBUG] Initialize.Process checkpoint 11: configuring single project');
       ConfigureSingleProject(Transport,Proj);
-      end;
 
     // load the symbol manager if it's enabled
-    DoLog('[DEBUG] Initialize.Process checkpoint 12: checking symbol settings');
-    DoLog('[DEBUG]   documentSymbols=' + BoolToStr(ServerSettings.documentSymbols, true));
-    DoLog('[DEBUG]   workspaceSymbols=' + BoolToStr(ServerSettings.workspaceSymbols, true));
     if ServerSettings.documentSymbols or ServerSettings.workspaceSymbols then
       begin
-      DoLog('[DEBUG] Initialize.Process checkpoint 13: creating TSymbolManager');
       SymbolManager := TSymbolManager.Create;
-      DoLog('[DEBUG] Initialize.Process checkpoint 14: TSymbolManager created, setting transport');
       SymbolManager.Transport := Transport;
       Result.capabilities.documentSymbolProvider:=True;
-      DoLog('[DEBUG] Initialize.Process checkpoint 15: calling CanProvideWorkspaceSymbols');
       Result.capabilities.workspaceSymbolProvider := ServerSettings.CanProvideWorkspaceSymbols;
-      DoLog('[DEBUG] Initialize.Process checkpoint 16: symbol manager setup done');
       end;
 
     // attempt to load optional config file
-    DoLog('[DEBUG] Initialize.Process checkpoint 17: loading config file');
     if Assigned(Opt) then
       ConfigPath := ExpandFileName(Opt.CodeToolsConfig);
     if FileExists(ConfigPath) then
@@ -504,7 +475,6 @@ begin
         CodeToolsOptions.LoadFromFile(ConfigPath);
       end;
     // include workspace paths as search paths
-    DoLog('[DEBUG] Initialize.Process checkpoint 18: collecting workspace paths');
     if ServerSettings.includeWorkspaceFoldersAsUnitPaths or
        ServerSettings.includeWorkspaceFoldersAsIncludePaths then
       begin
@@ -525,41 +495,29 @@ begin
             CodeToolsOptions.FPCOptions := CodeToolsOptions.FPCOptions + Option + ' ';
         end;
 
-    DoLog('[DEBUG] Initialize.Process checkpoint 19: workspace symbol provider check');
     if Result.Capabilities.workspaceSymbolProvider then
       begin
       // Store workspace paths in SymbolManager for IsFileInWorkspace checks
-      DoLog('[DEBUG] Initialize.Process checkpoint 20: setting up workspace paths');
       SymbolManager.WorkspacePaths.Clear;
-      DoLog('[DEBUG] Initialize.Process checkpoint 20a: Paths.Count=' + IntToStr(Paths.Count));
       for aPath in Paths do
         begin
-        DoLog('[DEBUG] Initialize.Process checkpoint 21a: adding to WorkspacePaths');
         SymbolManager.WorkspacePaths.Add(SymbolManager.NormalizePath(aPath));
-        DoLog('[DEBUG] Initialize.Process checkpoint 21b: scanning path ' + aPath);
         SymbolManager.Scan(aPath, false);
-        DoLog('[DEBUG] Initialize.Process checkpoint 21c: scan completed for ' + aPath);
         end;
-      DoLog('[DEBUG] Initialize.Process checkpoint 22: workspace scanning done');
       end;
 
-    DoLog('[DEBUG] Initialize.Process checkpoint 23: checking program setting');
     CheckProgramSetting;
 
-    DoLog('[DEBUG] Initialize.Process checkpoint 24: showing config status');
     ShowConfigStatus(Params,Paths,CodeToolsOptions);
 
-    DoLog('[DEBUG] Initialize.Process checkpoint 25: initializing CodeToolBoss');
     with CodeToolBoss do
       begin
         Init(CodeToolsOptions);
         IdentifierList.SortForHistory := True;
         IdentifierList.SortMethodForCompletion:=icsScopedAlphabetic;
       end;
-    DoLog('[DEBUG] Initialize.Process checkpoint 26: applying settings to capabilities');
     Result.Capabilities.ApplySettings(ServerSettings);
     // Set search path for codetools.
-    DoLog('[DEBUG] Initialize.Process checkpoint 27: setting up define templates');
     RootPath:=TDefineTemplate.Create('RootPath','RootPath','',CodetoolsOptions.ProjectDir,da_Directory);
     if ServerSettings.includeWorkspaceFoldersAsUnitPaths then
       begin
@@ -571,9 +529,7 @@ begin
       IncludePathTemplate:=TDefineTemplate.Create('RootIncludePath','RootIncludePath',IncludePathMacroName, IncludePathMacro+';'+Paths.DelimitedText, da_DefineRecurse);
       RootPath.AddChild(IncludePathTemplate);
       end;
-    DoLog('[DEBUG] Initialize.Process checkpoint 28: adding to define tree');
     CodeToolBoss.DefineTree.Add(RootPath);
-    DoLog('[DEBUG] Initialize.Process checkpoint 29: initialization complete');
   finally
     Paths.Free;
     re.Free;
