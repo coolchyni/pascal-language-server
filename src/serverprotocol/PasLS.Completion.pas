@@ -41,7 +41,7 @@ implementation
 
 uses
   SysUtils, Contnrs,
-  PasLS.CodeUtils, PasLS.Diagnostics, PasLS.Settings, PasLS.ClientProfile;
+  PasLS.CodeUtils, PasLS.Diagnostics, PasLS.Settings;
 
 { TCompletion }
 
