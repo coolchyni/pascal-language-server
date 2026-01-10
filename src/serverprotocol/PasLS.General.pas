@@ -247,7 +247,7 @@ end;
 
 procedure TInitialize.ShowConfigStatus(Params: TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
 var
-  aPath, ExcludeList, Option: String;
+  ExcludeList, Option: String;
   FPCOptions: TStringArray;
   I: Integer;
 begin
