@@ -7,7 +7,7 @@ interface
 uses
   Classes, SysUtils, fpcunit, testregistry, fpjson, jsonparser,
   CodeToolManager, CodeCache,
-  PasLS.Symbols, PasLS.ClientProfile;
+  PasLS.Symbols, PasLS.Settings;
 
 type
 
@@ -128,7 +128,9 @@ begin
   if SymbolManager = nil then
     SymbolManager := TSymbolManager.Create;
 
-  TClientProfile.SelectProfile('');
+  // Reset to default profile (show everything)
+  ServerSettings.flatSymbolMode := False;
+  ServerSettings.excludeSymbols.Clear;
   SetClientCapabilities(True);
 end;
 
@@ -136,7 +138,9 @@ procedure TTestSymbolPersistence.TearDown;
 begin
   CleanupTestFile;
   FTestCode := nil;
-  TClientProfile.SelectProfile('');
+  // Reset to default profile
+  ServerSettings.flatSymbolMode := False;
+  ServerSettings.excludeSymbols.Clear;
   SetClientCapabilities(False);
   inherited TearDown;
 end;

@@ -7,7 +7,7 @@ interface
 uses
   Classes, SysUtils, fpcunit, testregistry, fpjson, jsonparser,
   CodeToolManager, CodeCache,
-  PasLS.Symbols, PasLS.ClientProfile;
+  PasLS.Symbols, PasLS.Settings;
 
 type
 
@@ -142,8 +142,9 @@ begin
   if SymbolManager = nil then
     SymbolManager := TSymbolManager.Create;
 
-  // Reset client profile to default (in case previous test suite changed it)
-  TClientProfile.SelectProfile('');
+  // Reset to default profile (show everything)
+  ServerSettings.flatSymbolMode := False;
+  ServerSettings.excludeSymbols.Clear;
   // Set hierarchical mode for tests (matches TTestDocumentSymbol pattern)
   SetClientCapabilities(True);
 end;
@@ -152,8 +153,9 @@ procedure TTestWorkspaceSymbol.TearDown;
 begin
   CleanupTestFile;
   FTestCode := nil;
-  // Reset client profile and capabilities for next test suite
-  TClientProfile.SelectProfile('');
+  // Reset profile and capabilities for next test suite
+  ServerSettings.flatSymbolMode := False;
+  ServerSettings.excludeSymbols.Clear;
   SetClientCapabilities(False);
   inherited TearDown;
 end;
