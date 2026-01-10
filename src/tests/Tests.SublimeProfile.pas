@@ -7,7 +7,7 @@ interface
 uses
   Classes, SysUtils, fpcunit, testregistry, fpjson, jsonparser,
   CodeToolManager, CodeCache,
-  PasLS.Symbols, PasLS.ClientProfile;
+  PasLS.Symbols, PasLS.Settings;
 
 type
 
@@ -150,6 +150,31 @@ begin
     end;
 end;
 
+procedure SetupSublimeProfile;
+begin
+  // Sublime Text LSP profile settings
+  ServerSettings.flatSymbolMode := True;
+  ServerSettings.nullDocumentVersion := True;
+  ServerSettings.filterTextOnly := True;
+  ServerSettings.excludeSymbols.Clear;
+  ServerSettings.excludeSymbols.Add('sectionContainers');
+  ServerSettings.excludeSymbols.Add('interfaceMethodDecls');
+  ServerSettings.excludeSymbols.Add('implClassDefs');
+  // Trigger set to update the exclusion set
+  ServerSettings.excludeSymbols := ServerSettings.excludeSymbols;
+end;
+
+procedure ResetToDefaultProfile;
+begin
+  // Default profile settings (show everything)
+  ServerSettings.flatSymbolMode := False;
+  ServerSettings.nullDocumentVersion := False;
+  ServerSettings.filterTextOnly := False;
+  ServerSettings.excludeSymbols.Clear;
+  // Trigger set to update the exclusion set
+  ServerSettings.excludeSymbols := ServerSettings.excludeSymbols;
+end;
+
 procedure TTestSublimeProfile.SetUp;
 begin
   inherited SetUp;
@@ -161,15 +186,15 @@ begin
 
   // Reset capabilities to known state before each test
   SetClientCapabilities(True);
-  // Each test sets its own profile via TClientProfile.SelectProfile
+  // Each test sets its own profile via SetupSublimeProfile
 end;
 
 procedure TTestSublimeProfile.TearDown;
 begin
   CleanupTestFile;
   FTestCode := nil;
-  // Reset client profile and capabilities for next test suite
-  TClientProfile.SelectProfile('');
+  // Reset profile and capabilities for next test suite
+  ResetToDefaultProfile;
   SetClientCapabilities(False);
   inherited TearDown;
 end;
@@ -235,7 +260,7 @@ var
   RawJSON: String;
 begin
   // F1.1: Sublime profile uses SymbolInformation[] with location field
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -252,7 +277,7 @@ var
   RawJSON: String;
 begin
   // F1.2: Flat mode should NOT have children field
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -269,7 +294,7 @@ var
   Names: TStringList;
 begin
   // F1.3: Methods should be named as "ClassName.MethodName"
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -292,7 +317,7 @@ var
   RawJSON: String;
 begin
   // F1.4: Flat mode should NOT have containerName field (Lazarus style)
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -311,7 +336,7 @@ var
   Names: TStringList;
 begin
   // S1.1: Sublime profile excludes "interface" container symbol
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -333,7 +358,7 @@ var
   Names: TStringList;
 begin
   // S1.2: Sublime profile excludes "implementation" container symbol
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -359,7 +384,7 @@ var
   FoundTMyClass: Boolean;
 begin
   // S1.3: Classes should appear at top level (not nested under section containers)
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -396,7 +421,7 @@ var
 begin
   // M1.1: Sublime profile excludes interface method declarations
   // But keeps the implementation methods (TMyClass.MethodA, TMyClass.MethodB)
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -427,7 +452,7 @@ var
   Names: TStringList;
 begin
   // M1.2: Sublime profile keeps interface class definitions
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -452,7 +477,7 @@ var
 begin
   // M1.4: Interface GlobalFunc declaration should be excluded
   // Only the implementation version should exist (exactly 1 occurrence)
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -476,7 +501,7 @@ var
   Names: TStringList;
 begin
   // C1.1: Sublime profile excludes implementation-only class definitions
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -500,7 +525,7 @@ var
   Names: TStringList;
 begin
   // C1.4: Each class should appear exactly once (no duplicates)
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -528,7 +553,7 @@ var
   Names: TStringList;
 begin
   // C1.5: Forward declarations should be excluded
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -551,7 +576,7 @@ var
   Names: TStringList;
 begin
   // C1.6: Methods of impl-only classes should still appear
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -579,12 +604,12 @@ begin
   AssertNotNull('Code buffer should be loaded', FTestCode);
 
   // Get Sublime profile symbols
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
   SymbolManager.Reload(FTestCode, True);
   SublimeJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
 
   // Get Default profile symbols (hierarchical mode)
-  TClientProfile.SelectProfile('');  // Reset to default
+  ResetToDefaultProfile;  // Reset to default
   SetClientCapabilities(True);  // Hierarchical mode
   SymbolManager.Reload(FTestCode, True);
   DefaultJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
@@ -614,7 +639,7 @@ var
   Names: TStringList;
 begin
   // Global functions in implementation should be preserved
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);
@@ -637,7 +662,7 @@ var
   Names: TStringList;
 begin
   // Nested procedures should be preserved with proper naming
-  TClientProfile.SelectProfile('Sublime Text LSP');
+  SetupSublimeProfile;
 
   CreateTestFile(TEST_SUBLIME_UNIT);
   AssertNotNull('Code buffer should be loaded', FTestCode);

@@ -38,6 +38,36 @@ type
                       Suffix       // add a suffix which denotes the overload count
                       );
 
+  { Excludable symbol types for excludeSymbols array }
+  TExcludableSymbol = (
+    esSectionContainers,      // interface/implementation section containers
+    esInterfaceMethodDecls,   // method declarations from interface section
+    esImplClassDefs,          // class definitions from implementation section
+    esFields,                 // class/record fields
+    esProperties,             // class properties
+    esConstants,              // constants (global and class constants)
+    esEnumMembers             // enum members
+  );
+  TExcludableSymbols = set of TExcludableSymbol;
+
+const
+  { String names for JSON serialization }
+  ExcludableSymbolNames: array[TExcludableSymbol] of string = (
+    'sectionContainers',
+    'interfaceMethodDecls',
+    'implClassDefs',
+    'fields',
+    'properties',
+    'constants',
+    'enumMembers'
+  );
+
+{ Helper functions for TExcludableSymbol }
+function TryStrToExcludableSymbol(const S: string; out Symbol: TExcludableSymbol): Boolean;
+function ExcludableSymbolToStr(Symbol: TExcludableSymbol): string;
+
+type
+
   TMacroMap = specialize TFPGMap<ShortString, String>;
 
   { TServerSettings }
@@ -46,7 +76,9 @@ type
   private
     fBooleans: array[0..32] of Boolean;
     fProgram: String;
+    {$IFDEF USE_SQLITE}
     fSymbolDatabase: String;
+    {$ENDIF}
     fFPCOptions: TStrings;
     fExcludeWorkspaceFolders: TStrings;
     fCodeToolsConfig: String;
@@ -54,19 +86,20 @@ type
     fOverloadPolicy: TOverloadPolicy;
     fConfig: String;
     fScanFilePatterns: TStrings;
-    fClientProfileEnableFeatures: TStrings;
-    fClientProfileDisableFeatures: TStrings;
+    fExcludeSymbols: TStrings;
+    fExcludedSymbolSet: TExcludableSymbols;
     procedure SetFPCOptions(AValue: TStrings);
     procedure SetExcludeWorkspaceFolders(AValue: TStrings);
     procedure SetScanFilePatterns(AValue: TStrings);
-    procedure SetClientProfileEnableFeatures(AValue: TStrings);
-    procedure SetClientProfileDisableFeatures(AValue: TStrings);
+    procedure SetExcludeSymbols(AValue: TStrings);
   published
     // Path to the main program file for resolving references
     // if not available the path of the current document will be used
     property &program: String read fProgram write fProgram;
-    // Path to SQLite3 database for symbols
+    {$IFDEF USE_SQLITE}
+    // Path to SQLite3 database for symbols (requires USE_SQLITE compile switch)
     property symbolDatabase: String read fSymbolDatabase write fSymbolDatabase;
+    {$ENDIF}
     // FPC compiler options (passed to Code Tools)
     property fpcOptions: TStrings read fFPCOptions write SetFPCOptions;
     // Optional codetools.config file to load settings from
@@ -107,17 +140,21 @@ type
     property scanFilePatterns: TStrings read fScanFilePatterns write SetScanFilePatterns;
     // Check inactive regions
     property checkInactiveRegions : Boolean read fBooleans[11] write fBooleans[11];
-    // Client profile feature overrides
-    property clientProfileEnableFeatures: TStrings
-      read fClientProfileEnableFeatures write SetClientProfileEnableFeatures;
-    property clientProfileDisableFeatures: TStrings
-      read fClientProfileDisableFeatures write SetClientProfileDisableFeatures;
+    // Force flat symbol mode (SymbolInformation[]) instead of hierarchical
+    property flatSymbolMode: Boolean read fBooleans[12] write fBooleans[12];
+    // Use nil instead of 0 for document version in workspace edits
+    property nullDocumentVersion: Boolean read fBooleans[13] write fBooleans[13];
+    // Only set filterText in completion items, not label
+    property filterTextOnly: Boolean read fBooleans[14] write fBooleans[14];
+    // Array of symbol types to exclude from document symbols
+    property excludeSymbols: TStrings read fExcludeSymbols write SetExcludeSymbols;
   public
     constructor Create; override;
     Destructor Destroy; override;
     procedure ReplaceMacros(Macros: TMacroMap);
     Procedure Assign(aSource : TPersistent); override;
     function CanProvideWorkspaceSymbols: boolean;
+    function IsSymbolExcluded(Symbol: TExcludableSymbol): Boolean; inline;
     class function GetPropertyDescription(const PropName: String): String;
   end;
 
@@ -163,6 +200,26 @@ var
   _ServerSettings: TServerSettings;
   _ClientInfo: TClientInfo;
   _EnvironmentSettings:TConfigEnvironmentSettings;
+
+{ TExcludableSymbol helper functions }
+
+function TryStrToExcludableSymbol(const S: string; out Symbol: TExcludableSymbol): Boolean;
+var
+  I: TExcludableSymbol;
+begin
+  Result := False;
+  for I := Low(TExcludableSymbol) to High(TExcludableSymbol) do
+    if SameText(S, ExcludableSymbolNames[I]) then
+    begin
+      Symbol := I;
+      Exit(True);
+    end;
+end;
+
+function ExcludableSymbolToStr(Symbol: TExcludableSymbol): string;
+begin
+  Result := ExcludableSymbolNames[Symbol];
+end;
 
 Function EnvironmentSettings:TConfigEnvironmentSettings;
 
@@ -217,7 +274,9 @@ var
   I: integer;
 begin
   &program := ReplaceMacro(&program);
+  {$IFDEF USE_SQLITE}
   symbolDatabase := ReplaceMacro(symbolDatabase);
+  {$ENDIF}
 
   for I := 0 to fpcOptions.Count - 1 do
     begin
@@ -237,7 +296,9 @@ begin
     begin
     fBooleans:=Src.FBooleans;
     fProgram:=Src.fProgram;;
+    {$IFDEF USE_SQLITE}
     SymbolDatabase:=Src.SymbolDatabase;
+    {$ENDIF}
     FPCOptions:=Src.fpcOptions;
     ExcludeWorkspaceFolders:=Src.ExcludeWorkspaceFolders;
     CodeToolsConfig:=Src.CodeToolsConfig;
@@ -245,8 +306,7 @@ begin
     OverloadPolicy:=Src.OverloadPolicy;
     Config:=Src.Config;
     ScanFilePatterns:=Src.ScanFilePatterns;
-    ClientProfileEnableFeatures := Src.ClientProfileEnableFeatures;
-    ClientProfileDisableFeatures := Src.ClientProfileDisableFeatures;
+    ExcludeSymbols:=Src.ExcludeSymbols;
     end
   else
     inherited Assign(aSource);
@@ -270,16 +330,28 @@ begin
   fScanFilePatterns.Assign(AValue);
 end;
 
-procedure TServerSettings.SetClientProfileEnableFeatures(AValue: TStrings);
+procedure TServerSettings.SetExcludeSymbols(AValue: TStrings);
+var
+  I: Integer;
+  Symbol: TExcludableSymbol;
 begin
-  if fClientProfileEnableFeatures = AValue then Exit;
-  fClientProfileEnableFeatures.Assign(AValue);
+  // Only copy if different object; always re-parse the set
+  if fExcludeSymbols <> AValue then
+    fExcludeSymbols.Assign(AValue);
+
+  // Parse strings into set for efficient lookup
+  fExcludedSymbolSet := [];
+  for I := 0 to fExcludeSymbols.Count - 1 do
+  begin
+    if TryStrToExcludableSymbol(fExcludeSymbols[I], Symbol) then
+      Include(fExcludedSymbolSet, Symbol);
+    // Silently ignore unrecognized values for forward compatibility
+  end;
 end;
 
-procedure TServerSettings.SetClientProfileDisableFeatures(AValue: TStrings);
+function TServerSettings.IsSymbolExcluded(Symbol: TExcludableSymbol): Boolean;
 begin
-  if fClientProfileDisableFeatures = AValue then Exit;
-  fClientProfileDisableFeatures.Assign(AValue);
+  Result := Symbol in fExcludedSymbolSet;
 end;
 
 function TServerSettings.CanProvideWorkspaceSymbols: boolean;
@@ -291,7 +363,9 @@ class function TServerSettings.GetPropertyDescription(const PropName: String): S
 begin
   case PropName of
     'program': Result := 'Path to the main program file for resolving references';
-    'symbolDatabase': Result := 'Path to SQLite3 database for symbols';
+    {$IFDEF USE_SQLITE}
+    'symbolDatabase': Result := 'Path to SQLite3 database for symbols (requires USE_SQLITE)';
+    {$ENDIF}
     'fpcOptions': Result := 'FPC compiler options (passed to Code Tools)';
     'codeToolsConfig': Result := 'Optional codetools.config file to load settings from';
     'maximumCompletions': Result := 'Maximum number of completion items to be returned';
@@ -311,8 +385,10 @@ begin
     'config': Result := 'Config file or directory to read settings from';
     'scanFilePatterns': Result := 'File patterns for workspace scanning (array of glob patterns, e.g. ["*.pas", "*.pp"])';
     'checkInactiveRegions': Result := 'Check inactive regions';
-    'clientProfileEnableFeatures': Result := 'List of features to force-enable regardless of client profile';
-    'clientProfileDisableFeatures': Result := 'List of features to force-disable regardless of client profile';
+    'flatSymbolMode': Result := 'Force flat symbol mode (SymbolInformation[]) instead of hierarchical';
+    'nullDocumentVersion': Result := 'Use nil instead of 0 for document version in workspace edits';
+    'filterTextOnly': Result := 'Only set filterText in completion items, not label';
+    'excludeSymbols': Result := 'Array of symbol types to exclude: sectionContainers, interfaceMethodDecls, implClassDefs, fields, properties, constants, enumMembers';
     else
       Result := '';
   end;
@@ -325,11 +401,13 @@ begin
   fFPCOptions := TStringList.Create;
   fExcludeWorkspaceFolders := TStringList.Create;
   fScanFilePatterns := TStringList.Create;
-  fClientProfileEnableFeatures := TStringList.Create;
-  fClientProfileDisableFeatures := TStringList.Create;
+  fExcludeSymbols := TStringList.Create;
+  fExcludedSymbolSet := [];
 
   // default settings
+  {$IFDEF USE_SQLITE}
   symbolDatabase := '';
+  {$ENDIF}
   maximumCompletions := 200;
   overloadPolicy := TOverloadPolicy.Suffix;
   // default file patterns for workspace scanning
@@ -361,8 +439,7 @@ begin
   FreeAndNil(fFPCOptions);
   FreeAndNil(fExcludeWorkspaceFolders);
   FreeAndNil(fScanFilePatterns);
-  FreeAndNil(fClientProfileEnableFeatures);
-  FreeAndNil(fClientProfileDisableFeatures);
+  FreeAndNil(fExcludeSymbols);
   inherited Destroy;
 end;
 

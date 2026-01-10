@@ -55,18 +55,18 @@ implementation
 
 uses
   SysUtils, Contnrs,
-  PasLS.CodeUtils, PasLS.Diagnostics, PasLS.Settings, PasLS.ClientProfile;
+  PasLS.CodeUtils, PasLS.Diagnostics, PasLS.Settings;
 
 procedure TCompletionItemHelper.SetPrimaryText(text: string);
 begin
   filterText := text;
-  if not TClientProfile.Current.HasFeature(cfFilterTextOnly) then
+  if not ServerSettings.filterTextOnly then
     &label := text;
 end;
 
 procedure TCompletionItemHelper.SetSecondaryText(text: string);
 begin
-  if not TClientProfile.Current.HasFeature(cfFilterTextOnly) then
+  if not ServerSettings.filterTextOnly then
     &label := text;
 end;
 

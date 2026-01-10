@@ -22,10 +22,17 @@ unit PasLS.Symbols;
 {$mode objfpc}{$H+}
 {define SYMBOL_DEBUG}
 
+// Define USE_SQLITE to enable SQLite database support for workspace symbols.
+// Comment out the following line to build without SQLite dependency.
+{.$DEFINE USE_SQLITE}
+
 interface
 uses
   { RTL }
-  Classes, Contnrs, fpjson, fpjsonrpc, SQLite3,
+  Classes, Contnrs, fpjson, fpjsonrpc,
+  {$IFDEF USE_SQLITE}
+  SQLite3,
+  {$ENDIF}
   { Code Tools }
   CodeToolManager, CodeCache, CodeTree, LinkScanner,
   { Protocols }
@@ -98,8 +105,9 @@ type
     FEntry: TSymbolTableEntry;
     FTool: TCodeTool;
 
-    // For hierarchical mode: map className -> TDocumentSymbolEx
+    // For hierarchical mode: map className/enumName -> TDocumentSymbolEx
     FClassMap: TFPHashObjectList;
+    FEnumMap: TFPHashObjectList;
     FRootSymbols: TDocumentSymbolExItems;
 
     // For tracking current hierarchy
@@ -113,6 +121,7 @@ type
     FCurrentSectionSymbol: TDocumentSymbolEx;
 
     function FindOrCreateClass(const AClassName: String; Node: TCodeTreeNode; IsImplementationContainer: Boolean = False): TDocumentSymbolEx;
+    function FindEnumByName(const AEnumName: String): TDocumentSymbolEx;
     procedure SetNodeRange(Symbol: TDocumentSymbolEx; Node: TCodeTreeNode);
     function GetCurrentContainer: TDocumentSymbolExItems;
     function AddFlatSymbol(Node: TCodeTreeNode; const Name: String; Kind: TSymbolKind; const ContainerName: String = ''): TSymbol;
@@ -130,6 +139,7 @@ type
     function AddGlobalFunction(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddStruct(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddEnum(Node: TCodeTreeNode; const Name: String): TSymbol;
+    function AddEnumMember(Node: TCodeTreeNode; const EnumName, MemberName: String): TSymbol;
     function AddTypeAlias(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddConstant(Node: TCodeTreeNode; const Name: String): TSymbol;
     function AddVariable(Node: TCodeTreeNode; const Name: String): TSymbol;
@@ -177,6 +187,7 @@ type
     destructor Destroy; override;
   end;
 
+  {$IFDEF USE_SQLITE}
   { TSQLiteDatabase }
 
   TSQLiteDatabase = class
@@ -204,9 +215,9 @@ type
     { Symbols }
     function FindAllSymbols(Path: String): TJSONSerializedArray;
     function FindSymbols(Query: String): TJSONSerializedArray;
-    procedure ClearSymbols(Path: String); 
-    procedure InsertSymbol(Symbol: TSymbol); 
-    procedure InsertSymbols(Collection: TSymbolItems; StartIndex, EndIndex: Integer); 
+    procedure ClearSymbols(Path: String);
+    procedure InsertSymbol(Symbol: TSymbol);
+    procedure InsertSymbols(Collection: TSymbolItems; StartIndex, EndIndex: Integer);
 
     { Files }
     procedure TouchFile(Path: String);
@@ -215,6 +226,7 @@ type
     procedure RemoveFile(Path: String);
     Property Transport : TMessageTransport Read FTransport Write FTransport;
   end;
+  {$ENDIF}
 
   { TSymbolManager }
 
@@ -223,15 +235,21 @@ type
     fTransport: TMessageTransport;
     SymbolTable: TFPHashObjectList;
     ErrorList: TStringList;
+    {$IFDEF USE_SQLITE}
     fDatabase: TSymbolDatabase;
+    {$ENDIF}
     fWorkspacePaths: TStringList;
 
     function Load(Path: String): TCodeBuffer;
     procedure AddError(Message: String);
     function GetEntry(Code: TCodeBuffer): TSymbolTableEntry;
+    {$IFDEF USE_SQLITE}
     function GetDatabase: TSymbolDatabase;
+    {$ENDIF}
     procedure setTransport(AValue: TMessageTransport);
+    {$IFDEF USE_SQLITE}
     property Database: TSymbolDatabase read GetDatabase;
+    {$ENDIF}
   Protected
     Procedure DoLog(const Msg : String); overload;
     Procedure DoLog(const Fmt : String; const Args : Array of const); overload;
@@ -291,15 +309,15 @@ uses
   CodeAtom,
   FindDeclarationTool, KeywordFuncLists,PascalParserTool,
   { Protocol }
-  PasLS.Settings, PasLS.ClientProfile;
+  PasLS.Settings;
 
 function GetSymbolMode: TSymbolMode;
 begin
-  // Priority 1: Client profile forces flat mode
-  if TClientProfile.Current.HasFeature(cfFlatSymbolMode) then
+  // Priority 1: Explicit setting forces flat mode
+  if ServerSettings.flatSymbolMode then
     Exit(smFlat);
 
-  // Priority 2: Auto mode - use hierarchical if client supports it and server enables it
+  // Priority 2: Auto mode based on client capability
   if ClientSupportsDocumentSymbol and ServerSettings.documentSymbols then
     Result := smHierarchical
   else
@@ -400,6 +418,7 @@ begin
   if FMode = smHierarchical then
     begin
       FClassMap := TFPHashObjectList.Create(False); // Don't own objects - they're owned by FRootSymbols
+      FEnumMap := TFPHashObjectList.Create(False);
       FRootSymbols := TDocumentSymbolExItems.Create;
     end;
 end;
@@ -409,6 +428,7 @@ begin
   if FMode = smHierarchical then
     begin
       FreeAndNil(FClassMap);
+      FreeAndNil(FEnumMap);
       FreeAndNil(FRootSymbols);
     end;
   inherited;
@@ -543,6 +563,14 @@ begin
       // Add reference to class map for lookup with section-specific key
       FClassMap.Add(Key, Result);
     end;
+end;
+
+function TSymbolBuilder.FindEnumByName(const AEnumName: String): TDocumentSymbolEx;
+begin
+  Result := nil;
+  if FMode <> smHierarchical then
+    Exit;
+  Result := TDocumentSymbolEx(FEnumMap.Find(AEnumName));
 end;
 
 function TSymbolBuilder.AddClass(Node: TCodeTreeNode; const Name: String): TSymbol;
@@ -690,8 +718,38 @@ begin
         EnumSymbol.name := Name;
         EnumSymbol.kind := TSymbolKind._Enum;
         SetNodeRange(EnumSymbol, Node);
+        // Register enum for later member lookup
+        FEnumMap.Add(Name, EnumSymbol);
         // Also add to flat symbol list for database/workspace symbol
         Result := AddFlatSymbol(Node, Name, TSymbolKind._Enum);
+      end;
+  end;
+end;
+
+function TSymbolBuilder.AddEnumMember(Node: TCodeTreeNode; const EnumName, MemberName: String): TSymbol;
+var
+  EnumSymbol, MemberSymbol: TDocumentSymbolEx;
+begin
+  case FMode of
+    smFlat:
+      begin
+        // Flat mode: EnumName.MemberName naming
+        Result := AddFlatSymbol(Node, EnumName + '.' + MemberName, TSymbolKind._EnumMember);
+      end;
+
+    smHierarchical:
+      begin
+        // Hierarchical mode: add member to enum's children
+        EnumSymbol := FindEnumByName(EnumName);
+        if EnumSymbol <> nil then
+          begin
+            MemberSymbol := TDocumentSymbolEx.Create(EnumSymbol.children);
+            MemberSymbol.name := MemberName;
+            MemberSymbol.kind := TSymbolKind._EnumMember;
+            SetNodeRange(MemberSymbol, Node);
+          end;
+        // Add to flat symbol list with container
+        Result := AddFlatSymbol(Node, MemberName, TSymbolKind._EnumMember, EnumName);
       end;
   end;
 end;
@@ -924,6 +982,7 @@ begin
             end;
 
           // Insert symbols into database if available
+          {$IFDEF USE_SQLITE}
           if SymbolManager.Database <> nil then
             begin
               Next := 0;
@@ -938,12 +997,15 @@ begin
                   Start := Next + 1;
                 end;
             end;
+          {$ENDIF}
         finally
           SerializedItems.Free;
+          {$IFDEF USE_SQLITE}
           // Clear Symbols to free memory if database is available
           // (workspace/symbol will use Database.FindSymbols instead of in-memory symbols)
           if SymbolManager.Database <> nil then
             FEntry.Symbols.Clear;
+          {$ENDIF}
         end;
       end;
   end;
@@ -952,9 +1014,12 @@ end;
 { TSymbolTableEntry }
 
 function TSymbolTableEntry.GetRawJSON: String;
+{$IFDEF USE_SQLITE}
 var
   JSON: TJSONSerializedArray;
+{$ENDIF}
 begin
+  {$IFDEF USE_SQLITE}
   if (fRawJSON = '') and (SymbolManager.Database <> nil) then
     begin
       JSON := SymbolManager.Database.FindAllSymbols(Code.FileName);
@@ -964,6 +1029,7 @@ begin
         JSON.Free;
       end;
     end;
+  {$ENDIF}
   Result := fRawJSON;
 end;
 
@@ -973,13 +1039,15 @@ begin
 end;
 
 function TSymbolTableEntry.RequestReload: boolean;
+{$IFDEF USE_SQLITE}
 var
   Database: TSymbolDatabase;
   Path: String;
-
+{$ENDIF}
 begin
   if Modified then
     exit(true);
+  {$IFDEF USE_SQLITE}
   Database := SymbolManager.Database;
   Path := Code.FileName;
   Result := false;
@@ -995,6 +1063,9 @@ begin
     end
   else
     Result := true;
+  {$ELSE}
+  Result := true;
+  {$ENDIF}
 end;
 
 function TSymbolTableEntry.AddSymbol(Name: String; Kind: TSymbolKind; FileName: String; Line, Column: Integer;EndLine,EndCol: Integer): TSymbol;
@@ -1015,11 +1086,13 @@ begin
 end;
 
 procedure TSymbolTableEntry.SerializeSymbols;
+{$IFDEF USE_SQLITE}
 const
   BATCH_COUNT = 1000;
+{$ENDIF}
 var
   SerializedItems: TJSONArray;
-  i, Start, Next, Total: Integer;
+  i{$IFDEF USE_SQLITE}, Start, Next, Total{$ENDIF}: Integer;
   Symbol: TSymbol;
 begin
   SerializedItems := specialize TLSPStreaming<TSymbolItems>.ToJSON(Symbols) as TJSONArray;
@@ -1030,6 +1103,7 @@ begin
         Symbol.RawJSON := SerializedItems[i].AsJson;
       end;
 
+    {$IFDEF USE_SQLITE}
     // if a database is available then insert serialized symbols in batches
     if SymbolManager.Database <> nil then
       begin
@@ -1045,14 +1119,17 @@ begin
             Start := Next + 1;
           end;
       end;
+    {$ENDIF}
 
     fRawJSON := SerializedItems.AsJSON;
   Finally
     SerializedItems.Free;
+    {$IFDEF USE_SQLITE}
     // Clear Symbols to free memory if database is available
     // (workspace/symbol will use Database.FindSymbols instead of in-memory symbols)
     if SymbolManager.Database <> nil then
       Symbols.Clear;
+    {$ENDIF}
   end;
 end;
 
@@ -1060,8 +1137,10 @@ procedure TSymbolTableEntry.Clear;
 begin
   Modified := false;
   Symbols.Clear;
+  {$IFDEF USE_SQLITE}
   if (SymbolManager.Database <> nil) and (Code <> nil) then
     SymbolManager.Database.ClearSymbols(Code.FileName);
+  {$ENDIF}
 end;
 
 destructor TSymbolTableEntry.Destroy; 
@@ -1118,20 +1197,22 @@ function TSymbolExtractor.ShouldExcludeInterfaceDecl: Boolean;
 begin
   Result := (Builder.Mode = smFlat) and
             (CodeSection = ctnInterface) and
-            TClientProfile.Current.HasFeature(cfExcludeInterfaceMethodDecls);
+            ServerSettings.IsSymbolExcluded(TExcludableSymbol.esInterfaceMethodDecls);
 end;
 
 function TSymbolExtractor.ShouldExcludeImplClass: Boolean;
 begin
   Result := (Builder.Mode = smFlat) and
             (CodeSection = ctnImplementation) and
-            TClientProfile.Current.HasFeature(cfExcludeImplClassDefs);
+            ServerSettings.IsSymbolExcluded(TExcludableSymbol.esImplClassDefs);
 end;
 
 function TSymbolExtractor.AddSymbol(Node: TCodeTreeNode; Kind: TSymbolKind; Name: String; Container: String): TSymbol;
 var
   CodePos, EndPos: TCodeXYPosition;
+  {$IFDEF USE_SQLITE}
   FileName: String;
+  {$ENDIF}
 begin
   {$ifdef SYMBOL_DEBUG}
   writeln(IndentLevelString(IndentLevel + 1), '* ', Name);
@@ -1143,6 +1224,7 @@ begin
   // Adjust EndPos for LSP Range specification (end position must be exclusive)
   AdjustEndPosition(Node, EndPos);
 
+  {$IFDEF USE_SQLITE}
   // clear existing symbols in symbol database
   // we don't know which include files are associated
   // with each unit so we need to check each time
@@ -1156,6 +1238,7 @@ begin
           RelatedFiles.Add(FileName, @CodePos);
         end;
     end;
+  {$ENDIF}
 
   Result := Entry.AddSymbol(Name, Kind, CodePos.Code.FileName, CodePos.Y, CodePos.X, EndPos.Y,EndPos.X);
 end;
@@ -1203,7 +1286,8 @@ begin
             // Extract property name from current atom
             PropertyName := Copy(Tool.Scanner.CleanedSrc, Tool.CurPos.StartPos,
                                  Tool.CurPos.EndPos - Tool.CurPos.StartPos);
-            Builder.AddProperty(Node, TypeName, PropertyName);
+            if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esProperties) then
+              Builder.AddProperty(Node, TypeName, PropertyName);
           end;
         ctnVarDefinition:
           begin
@@ -1215,7 +1299,8 @@ begin
             i := Pos(':', FieldName);
             if i > 0 then
               FieldName := Copy(FieldName, 1, i - 1);
-            Builder.AddField(Node, TypeName, FieldName);
+            if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esFields) then
+              Builder.AddField(Node, TypeName, FieldName);
           end;
         ctnConstSection:
           begin
@@ -1228,7 +1313,8 @@ begin
                 if Child.Desc = ctnConstDefinition then
                   begin
                     ConstName := GetIdentifierAtPos(Tool, Child.StartPos, true, true);
-                    Builder.AddClassConstant(Child, TypeName, ConstName);
+                    if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esConstants) then
+                      Builder.AddClassConstant(Child, TypeName, ConstName);
                     PrintNodeDebug(Child);
                   end;
                 Child := Child.NextBrother;
@@ -1282,7 +1368,7 @@ end;
 procedure TSymbolExtractor.ExtractTypeDefinition(TypeDefNode, Node: TCodeTreeNode);
 var
   Child: TCodeTreeNode;
-  TypeName: String;
+  TypeName, MemberName: String;
 begin
   while Node <> nil do
     begin
@@ -1336,13 +1422,16 @@ begin
           begin
             TypeName := CleanTypeName(GetIdentifierAtPos(Tool, TypeDefNode.StartPos, true, true));
             Builder.AddEnum(TypeDefNode, TypeName);
-            Child := Node.FirstChild;
-            while Child <> nil do
+            if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esEnumMembers) then
               begin
-                PrintNodeDebug(Child);
-                // todo: make an option to show enum members in doc symbols
-                //AddSymbol(Child, TSymbolKind._EnumMember, TypeName+'.'+GetIdentifierAtPos(Child.StartPos, true, true));
-                Child := Child.NextBrother;
+                Child := Node.FirstChild;
+                while Child <> nil do
+                  begin
+                    PrintNodeDebug(Child);
+                    MemberName := GetIdentifierAtPos(Tool, Child.StartPos, true, true);
+                    Builder.AddEnumMember(Child, TypeName, MemberName);
+                    Child := Child.NextBrother;
+                  end;
               end;
           end;
         otherwise
@@ -1494,7 +1583,7 @@ begin
                 Builder.BeginInterfaceSection(Node);
                 // For flat mode, add namespace symbol (unless filtered)
                 if Builder.Mode = smFlat then
-                  if not TClientProfile.Current.HasFeature(cfExcludeSectionContainers) then
+                  if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esSectionContainers) then
                     AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Interface);
               end;
             ctnImplementation:
@@ -1503,7 +1592,7 @@ begin
                 Builder.BeginImplementationSection(Node);
                 // For flat mode, add namespace symbol (unless filtered)
                 if Builder.Mode = smFlat then
-                  if not TClientProfile.Current.HasFeature(cfExcludeSectionContainers) then
+                  if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esSectionContainers) then
                     AddSymbol(Node, TSymbolKind._Namespace, kSymbolName_Implementation);
               end;
           end;
@@ -1526,7 +1615,8 @@ begin
                 if Child.Desc = ctnConstDefinition then
                   begin
                     ConstName := GetIdentifierAtPos(Tool, Child.StartPos, true, true);
-                    Builder.AddConstant(Child, ConstName);
+                    if not ServerSettings.IsSymbolExcluded(TExcludableSymbol.esConstants) then
+                      Builder.AddConstant(Child, ConstName);
                     PrintNodeDebug(Child);
                   end;
                 Child := Child.NextBrother;
@@ -1646,9 +1736,10 @@ begin
   inherited;
 end;
 
+{$IFDEF USE_SQLITE}
 { TSQLiteDatabase }
 
-procedure TSQLiteDatabase.LogError(errmsg: pansichar); 
+procedure TSQLiteDatabase.LogError(errmsg: pansichar);
 begin
 end;
 
@@ -1914,26 +2005,31 @@ begin
   Exec(CREATE_SYMBOL_TABLE);
   Exec(CREATE_ENTRY_TABLE);
 end;
+{$ENDIF USE_SQLITE}
 
 { TSymbolManager }
 
+{$IFDEF USE_SQLITE}
 function TSymbolManager.GetDatabase: TSymbolDatabase;
 begin
-  if (fDatabase = nil) and 
-    (ServerSettings.symbolDatabase <> '') then 
+  if (fDatabase = nil) and
+    (ServerSettings.symbolDatabase <> '') then
     begin
     fDatabase := TSymbolDatabase.Create(ExpandFileName(ServerSettings.symbolDatabase));
     fDatabase.Transport:=fTransport;
     end;
   Result := fDatabase;
 end;
+{$ENDIF}
 
 procedure TSymbolManager.setTransport(AValue: TMessageTransport);
 begin
   if fTransport=AValue then Exit;
   fTransport:=AValue;
+  {$IFDEF USE_SQLITE}
   if assigned(fDatabase) then
     fDatabase.Transport:=fTransport;
+  {$ENDIF}
 end;
 
 procedure TSymbolManager.DoLog(const Msg: String);
@@ -1956,9 +2052,11 @@ begin
   Entry := TSymbolTableEntry(SymbolTable.Find(FileName));
   if Entry <> nil then
     begin
+    {$IFDEF USE_SQLITE}
     // Remove file from database (both symbols and entries tables)
     if (Database <> nil) and (Entry.Code <> nil) then
       Database.RemoveFile(Entry.Code.FileName);
+    {$ENDIF}
 
     // Remove entry from in-memory symbol table
     Index := SymbolTable.FindIndexOf(FileName);
@@ -1969,7 +2067,9 @@ end;
 
 procedure TSymbolManager.UnloadFile(FileName: String);
 var
+  {$IFDEF USE_SQLITE}
   Index: Integer;
+  {$ENDIF}
   Entry: TSymbolTableEntry;
 begin
   Entry := TSymbolTableEntry(SymbolTable.Find(FileName));
@@ -1978,6 +2078,7 @@ begin
   if Entry = nil then
     Exit;
 
+  {$IFDEF USE_SQLITE}
   if Database <> nil then
     begin
     // With database: just remove from memory, symbols stay in DB
@@ -1986,6 +2087,7 @@ begin
       SymbolTable.Delete(Index);  // Frees TSymbolTableEntry
     end
   else
+  {$ENDIF}
     begin
     // Without database: keep entry for workspace/symbol queries
     // Mark as unloaded so we know the file is closed
@@ -2006,9 +2108,11 @@ end;
 
 function TSymbolManager.FindWorkspaceSymbols(Query: String): TJSONSerializedArray;
 begin
+  {$IFDEF USE_SQLITE}
   if Database <> nil then
     result := Database.FindSymbols(Query)
   else
+  {$ENDIF}
     result := CollectSerializedSymbols(Query);
 end;
 
@@ -2273,7 +2377,9 @@ end;
 
 destructor TSymbolManager.Destroy;
 begin
+  {$IFDEF USE_SQLITE}
   FreeAndNil(fDatabase);
+  {$ENDIF}
   FreeAndNil(fWorkspacePaths);
   ErrorList.Free;
   SymbolTable.Free;
