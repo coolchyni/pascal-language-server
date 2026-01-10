@@ -142,10 +142,6 @@ type
     property checkInactiveRegions : Boolean read fBooleans[11] write fBooleans[11];
     // Force flat symbol mode (SymbolInformation[]) instead of hierarchical
     property flatSymbolMode: Boolean read fBooleans[12] write fBooleans[12];
-    // Use nil instead of 0 for document version in workspace edits
-    property nullDocumentVersion: Boolean read fBooleans[13] write fBooleans[13];
-    // Only set filterText in completion items, not label
-    property filterTextOnly: Boolean read fBooleans[14] write fBooleans[14];
     // Array of symbol types to exclude from document symbols
     property excludeSymbols: TStrings read fExcludeSymbols write SetExcludeSymbols;
   public
@@ -386,8 +382,6 @@ begin
     'scanFilePatterns': Result := 'File patterns for workspace scanning (array of glob patterns, e.g. ["*.pas", "*.pp"])';
     'checkInactiveRegions': Result := 'Check inactive regions';
     'flatSymbolMode': Result := 'Force flat symbol mode (SymbolInformation[]) instead of hierarchical';
-    'nullDocumentVersion': Result := 'Use nil instead of 0 for document version in workspace edits';
-    'filterTextOnly': Result := 'Only set filterText in completion items, not label';
     'excludeSymbols': Result := 'Array of symbol types to exclude: sectionContainers, interfaceMethodDecls, implClassDefs, fields, properties, constants, enumMembers';
     else
       Result := '';

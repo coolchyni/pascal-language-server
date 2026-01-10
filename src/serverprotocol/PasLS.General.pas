@@ -247,7 +247,7 @@ end;
 
 procedure TInitialize.ShowConfigStatus(Params: TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
 var
-  aPath, ExcludeList: String;
+  ExcludeList, Option: String;
   I: Integer;
   FPCOptions: TStringArray;
 begin
@@ -302,8 +302,6 @@ begin
   DoLog(kSettingPrefix+'minimalisticCompletions: ', ServerSettings.minimalisticCompletions);
   DoLog(kSettingPrefix+'showSyntaxErrors: ', ServerSettings.showSyntaxErrors);
   DoLog(kSettingPrefix+'flatSymbolMode: ', ServerSettings.flatSymbolMode);
-  DoLog(kSettingPrefix+'nullDocumentVersion: ', ServerSettings.nullDocumentVersion);
-  DoLog(kSettingPrefix+'filterTextOnly: ', ServerSettings.filterTextOnly);
 
   // Show excludeSymbols
   if ServerSettings.excludeSymbols.Count > 0 then
