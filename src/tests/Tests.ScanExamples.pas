@@ -61,14 +61,29 @@ begin
         Exit;
     end;
 
-  // Try common paths
-  Candidates[0] := 'D:\che_m\laz32\lazarus\components\codetools\examples\scanexamples';
-  Candidates[1] := '/Applications/Lazarus/components/codetools/examples/scanexamples';
+  // Try standard installation paths (platform-specific)
+  {$IFDEF DARWIN}
+  Candidates[0] := '/Applications/Lazarus/components/codetools/examples/scanexamples';
+  Candidates[1] := '/usr/local/share/lazarus/components/codetools/examples/scanexamples';
+  Candidates[2] := '';
+  Candidates[3] := '';
+  {$ENDIF}
+  {$IFDEF LINUX}
+  Candidates[0] := '/usr/share/lazarus/components/codetools/examples/scanexamples';
+  Candidates[1] := '/opt/lazarus/components/codetools/examples/scanexamples';
   Candidates[2] := '/lazarus/components/codetools/examples/scanexamples';
-  Candidates[3] := '/usr/share/lazarus/components/codetools/examples/scanexamples';
+  Candidates[3] := '';
+  {$ENDIF}
+  {$IFDEF WINDOWS}
+  // Windows has no standard installation path, rely on LAZARUSDIR
+  Candidates[0] := '';
+  Candidates[1] := '';
+  Candidates[2] := '';
+  Candidates[3] := '';
+  {$ENDIF}
 
   for I := 0 to High(Candidates) do
-    if DirectoryExists(Candidates[I]) then
+    if (Candidates[I] <> '') and DirectoryExists(Candidates[I]) then
       begin
         Result := Candidates[I];
         Exit;
