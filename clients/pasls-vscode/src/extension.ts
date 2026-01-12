@@ -262,7 +262,7 @@ export function activate(context: ExtensionContext) {
 		]
 	}
 
-	client = new LanguageClient('pascal-language-server', 'Pascal Language Server', serverOptions, clientOptions);
+	client = new LanguageClient('pascalLanguageServer', 'Pascal Language Server', serverOptions, clientOptions);
 	client.start();
 	client.onReady().then(function() {
 		client.onNotification(InactiveRegionNotification,setInactiveRegion);
