@@ -46,6 +46,8 @@ type
     procedure TestGlobalVarSymbolsFlat;
     procedure TestClassConstantSymbolsHierarchical;
     procedure TestClassConstantSymbolsFlat;
+    procedure TestProgramFileSymbols;
+    procedure TestDeeplyNestedFunctions;
   end;
 
 implementation
@@ -319,6 +321,89 @@ const
     'end;' + LineEnding +
     '' + LineEnding +
     'end.';
+
+  // Test file for program file (no interface/implementation sections)
+  TEST_PROGRAM_FILE =
+    'program TestProgram;' + LineEnding +
+    '' + LineEnding +
+    '{$mode objfpc}{$H+}' + LineEnding +
+    '' + LineEnding +
+    'type' + LineEnding +
+    '  TMyClass = class' + LineEnding +
+    '    procedure DoWork;' + LineEnding +
+    '  end;' + LineEnding +
+    '' + LineEnding +
+    '  TMyRecord = record' + LineEnding +
+    '    X, Y: Integer;' + LineEnding +
+    '  end;' + LineEnding +
+    '' + LineEnding +
+    'var' + LineEnding +
+    '  GlobalVar: Integer;' + LineEnding +
+    '' + LineEnding +
+    'procedure TMyClass.DoWork;' + LineEnding +
+    'begin' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    'procedure GlobalProc;' + LineEnding +
+    'begin' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    'begin' + LineEnding +
+    'end.';
+
+  // Test file for 3-level deeply nested functions
+  TEST_DEEPLY_NESTED =
+    'unit TestDeepNest;' + LineEnding +
+    '' + LineEnding +
+    '{$mode objfpc}{$H+}' + LineEnding +
+    '' + LineEnding +
+    'interface' + LineEnding +
+    '' + LineEnding +
+    'implementation' + LineEnding +
+    '' + LineEnding +
+    'procedure Outer;' + LineEnding +
+    '  procedure Level1;' + LineEnding +
+    '    procedure Level2;' + LineEnding +
+    '      procedure Level3;' + LineEnding +
+    '      begin' + LineEnding +
+    '      end;' + LineEnding +
+    '    begin' + LineEnding +
+    '      Level3;' + LineEnding +
+    '    end;' + LineEnding +
+    '  begin' + LineEnding +
+    '    Level2;' + LineEnding +
+    '  end;' + LineEnding +
+    'begin' + LineEnding +
+    '  Level1;' + LineEnding +
+    'end;' + LineEnding +
+    '' + LineEnding +
+    'end.';
+
+{ Helper functions for hierarchy validation }
+
+function FindSymbolInArray(Arr: TJSONArray; const Name: String): TJSONObject;
+var
+  I: Integer;
+  Obj: TJSONObject;
+begin
+  Result := nil;
+  for I := 0 to Arr.Count - 1 do
+    begin
+      Obj := Arr.Items[I] as TJSONObject;
+      if Obj.Get('name', '') = Name then
+        Exit(Obj);
+    end;
+end;
+
+function FindChildSymbol(Parent: TJSONObject; const Name: String): TJSONObject;
+var
+  Children: TJSONArray;
+begin
+  Result := nil;
+  Children := Parent.Get('children', TJSONArray(nil));
+  if Children <> nil then
+    Result := FindSymbolInArray(Children, Name);
+end;
 
 { TTestDocumentSymbol }
 
@@ -2029,6 +2114,102 @@ begin
 
   // Verify class also exists
   AssertTrue('JSON should contain TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestProgramFileSymbols;
+var
+  RawJSON: String;
+  F: TextFile;
+  ExistingBuffer: TCodeBuffer;
+  TestDir: String;
+begin
+  // Ensure hierarchical mode (previous test might have set flat mode)
+  SetClientCapabilities(True);
+
+  // Use .lpr extension for program files
+  // Use platform-specific directory that CodeToolBoss can access
+  {$IFDEF DARWIN}
+  // macOS: use /tmp which is always writable
+  TestDir := '/tmp/';
+  {$ELSE}
+  // Windows/Linux: use executable directory
+  TestDir := ExtractFilePath(ParamStr(0));
+  {$ENDIF}
+
+  FTestFile := TestDir + 'testprog_' + IntToStr(Random(100000)) + '.lpr';
+
+  AssignFile(F, FTestFile);
+  try
+    Rewrite(F);
+    Write(F, TEST_PROGRAM_FILE);
+  finally
+    CloseFile(F);
+  end;
+
+  // Force CodeToolBoss to reload from disk if buffer already exists
+  ExistingBuffer := CodeToolBoss.FindFile(FTestFile);
+  if ExistingBuffer <> nil then
+    ExistingBuffer.Revert;
+
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code should be loaded', FTestCode);
+
+  SymbolManager.Reload(FTestCode, True);
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  // Verify program symbols (no interface/implementation structure)
+  AssertTrue('Should have TMyClass', Pos('"TMyClass"', RawJSON) > 0);
+  AssertTrue('Should have TMyRecord', Pos('"TMyRecord"', RawJSON) > 0);
+  AssertTrue('Should have GlobalVar', Pos('"GlobalVar"', RawJSON) > 0);
+  AssertTrue('Should have DoWork', Pos('"DoWork"', RawJSON) > 0);
+  AssertTrue('Should have GlobalProc', Pos('"GlobalProc"', RawJSON) > 0);
+end;
+
+procedure TTestDocumentSymbol.TestDeeplyNestedFunctions;
+var
+  RawJSON: String;
+  JSONData: TJSONData;
+  Symbols: TJSONArray;
+  ImplSymbol, Outer, Level1, Level2, Level3: TJSONObject;
+  ImplChildren: TJSONArray;
+begin
+  CreateTestFile(TEST_DEEPLY_NESTED);
+  FTestCode := CodeToolBoss.LoadFile(FTestFile, True, False);
+  AssertNotNull('Code should be loaded', FTestCode);
+
+  SymbolManager.Reload(FTestCode, True);
+  RawJSON := SymbolManager.FindDocumentSymbols(FTestFile).AsJSON;
+  AssertTrue('Should have extracted symbols', RawJSON <> '');
+
+  JSONData := GetJSON(RawJSON);
+  try
+    AssertNotNull('JSONData should not be nil', JSONData);
+    AssertTrue('Root should be array', JSONData is TJSONArray);
+    Symbols := JSONData as TJSONArray;
+
+    // Find implementation section (procedures are nested under it)
+    ImplSymbol := FindSymbolInArray(Symbols, 'implementation');
+    AssertNotNull('implementation section should exist', ImplSymbol);
+
+    ImplChildren := ImplSymbol.Get('children', TJSONArray(nil));
+    AssertNotNull('implementation should have children', ImplChildren);
+
+    // Verify 3-level nesting hierarchy: Outer > Level1 > Level2 > Level3
+    Outer := FindSymbolInArray(ImplChildren, 'Outer');
+    AssertNotNull('Outer should exist under implementation', Outer);
+
+    Level1 := FindChildSymbol(Outer, 'Level1');
+    AssertNotNull('Level1 should be child of Outer', Level1);
+
+    Level2 := FindChildSymbol(Level1, 'Level2');
+    AssertNotNull('Level2 should be child of Level1', Level2);
+
+    Level3 := FindChildSymbol(Level2, 'Level3');
+    AssertNotNull('Level3 should be child of Level2 (3-level nesting)', Level3);
+  finally
+    JSONData.Free;
+  end;
 end;
 
 initialization
