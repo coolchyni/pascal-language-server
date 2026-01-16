@@ -1,0 +1,209 @@
+name: Build pasls
+
+on:
+  push:
+    branches: [trunk, main]
+    tags: ['v*']
+  pull_request:
+    branches: [trunk, main]
+  workflow_dispatch:
+
+env:
+  # Lazarus release to use for CodeTools source
+  LAZARUS_VERSION: "lazarus_4_0"
+
+jobs:
+  # Native builds for all platforms
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-linux
+          # Linux ARM64
+          - os: ubuntu-24.04-arm
+            target: aarch64-linux
+          # macOS Intel
+          - os: macos-15-intel
+            target: x86_64-darwin
+          # macOS Apple Silicon
+          - os: macos-latest
+            target: aarch64-darwin
+          # Windows 64-bit
+          - os: windows-latest
+            target: x86_64-win64
+          # Windows 32-bit (built on 64-bit Windows)
+          - os: windows-latest
+            target: i386-win32
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Install FPC on Linux
+      - name: Install FPC (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fpc
+
+      # Install FPC on macOS
+      - name: Install FPC (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install fpc
+
+      # Install FPC OOTB on Windows (portable, no installation needed)
+      - name: Install FPC (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # Download FPC OOTB for the target platform
+          FPC_VERSION="322"
+          FPC_BASE_URL="https://github.com/fredvs/freepascal-ootb/releases/download/3.2.2"
+
+          if [[ "${{ matrix.target }}" == "i386-win32" ]]; then
+            FPC_PACKAGE="fpc-ootb-${FPC_VERSION}-i386-win32.zip"
+          else
+            FPC_PACKAGE="fpc-ootb-${FPC_VERSION}-x86_64-win64.zip"
+          fi
+
+          echo "Downloading FPC OOTB: $FPC_PACKAGE"
+          curl -L -o fpc-ootb.zip "${FPC_BASE_URL}/${FPC_PACKAGE}"
+
+          # Extract to C:\fpc-ootb
+          mkdir -p /c/fpc-ootb
+          unzip -o fpc-ootb.zip -d /c/fpc-ootb
+
+          # FPC OOTB uses fpc-ootb-32.exe or fpc-ootb-64.exe
+          if [[ "${{ matrix.target }}" == "i386-win32" ]]; then
+            FPC_EXE=$(find /c/fpc-ootb -name "fpc-ootb-32.exe" -type f | head -1)
+          else
+            FPC_EXE=$(find /c/fpc-ootb -name "fpc-ootb-64.exe" -type f | head -1)
+          fi
+          FPC_DIR=$(dirname "$FPC_EXE")
+          echo "FPC OOTB directory: $FPC_DIR"
+          echo "FPC executable: $FPC_EXE"
+
+          # List contents for debugging
+          ls -la "$FPC_DIR"
+
+          # Set FPC environment variable (detected by build_fpc.sh)
+          # Convert to Windows path for FPC
+          FPC_WIN_PATH=$(cygpath -w "$FPC_EXE")
+          echo "FPC=$FPC_WIN_PATH" >> $GITHUB_ENV
+
+          # Also add directory to PATH
+          echo "$FPC_DIR" >> $GITHUB_PATH
+
+          # Verify
+          "$FPC_EXE" -iV
+
+      # Download Lazarus source for CodeTools
+      - name: Download Lazarus source
+        run: |
+          git clone --depth 1 --branch ${{ env.LAZARUS_VERSION }} \
+            https://gitlab.com/freepascal.org/lazarus/lazarus.git \
+            "${{ runner.temp }}/lazarus"
+        shell: bash
+
+      - name: Build pasls
+        run: |
+          export LAZARUSDIR="${{ runner.temp }}/lazarus"
+          cd src
+          chmod +x build_fpc.sh
+          ./build_fpc.sh ${{ matrix.target }}
+        shell: bash
+
+      - name: Build tests
+        run: |
+          export LAZARUSDIR="${{ runner.temp }}/lazarus"
+          cd src
+          ./build_fpc.sh ${{ matrix.target }} --tests
+        shell: bash
+
+      - name: Run tests (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x build/${{ matrix.target }}/testlsp
+          build/${{ matrix.target }}/testlsp
+        shell: bash
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          build/${{ matrix.target }}/testlsp.exe
+        shell: bash
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pasls-${{ matrix.target }}
+          path: dist/${{ matrix.target }}/pasls*
+          if-no-files-found: error
+
+  # Combine all artifacts into a single download
+  package:
+    needs: [build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Display structure
+        run: ls -R dist
+
+      - name: Upload combined package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pasls-all-platforms
+          path: dist/
+
+  # Create GitHub Release when a tag is pushed
+  release:
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create archives and checksums
+        run: |
+          cd dist
+          for dir in pasls-*/; do
+            target="${dir%/}"
+            target="${target#pasls-}"
+            if [[ "$target" == *"win"* ]]; then
+              zip -r "pasls-${target}.zip" "pasls-${target}/"
+            else
+              tar -czvf "pasls-${target}.tar.gz" "pasls-${target}/"
+            fi
+          done
+          # Generate SHA256 checksums
+          sha256sum *.tar.gz *.zip > checksums.sha256
+          echo "=== checksums.sha256 ==="
+          cat checksums.sha256
+          ls -la
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.sha256
+          generate_release_notes: true
