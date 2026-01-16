@@ -156,7 +156,7 @@ end;
 
 { Find all sub directories which contain Pascal source files }
 
-function TInitialize.IsPasExt(Const aExtension: String): Boolean;
+function TInitialize.IsPasExt(const aExtension: String): Boolean;
 var
   E : String;
 begin
@@ -214,7 +214,7 @@ begin
     exit;
 
   havePas:=False;
-  if FindFirst(RootPath+AllFilesMask, faAnyFile, Info) = 0 then
+  if FindFirst(RootPath + AllFilesMask, faAnyFile, Info) = 0 then
     try
       repeat
         if ((Info.Attr and faDirectory) <> 0) and not((Info.Name = '.') or (Info.Name = '..')) then
@@ -352,6 +352,15 @@ begin
 end;
 
 function TInitialize.Process(var Params : TLSPInitializeParams): TInitializeResult;
+
+  function EscapeFileName(const Name: String): String;
+  begin
+    if Pos(' ', Name) > 0 then
+      Result := '"' + Name + '"'
+    else
+      Result := Name;
+  end;
+
 var
   Proj, Option, aPath, ConfigPath: String;
   CodeToolsOptions: TCodeToolsOptions;
@@ -476,10 +485,10 @@ begin
     for aPath in WorkspacePaths do
       begin
         if ServerSettings.includeWorkspaceFoldersAsUnitPaths then
-          FPCOptions += ['-Fu' + ExpandFileName(aPath)];
+          FPCOptions += ['-Fu' + EscapeFileName(ExpandFileName(aPath))];
 
         if ServerSettings.includeWorkspaceFoldersAsIncludePaths then
-          FPCOptions += ['-Fi' + ExpandFileName(aPath)];
+          FPCOptions += ['-Fi' + EscapeFileName(ExpandFileName(aPath))];
       end;
 
     CodeToolsOptions.FPCOptions := JoinString(FPCOptions, ' ');
@@ -503,7 +512,7 @@ begin
       begin
         Init(CodeToolsOptions);
         IdentifierList.SortForHistory := True;
-        IdentifierList.SortMethodForCompletion:=icsScopedAlphabetic;
+        IdentifierList.SortMethodForCompletion := icsScopedAlphabetic;
       end;
 
     Result.Capabilities.ApplySettings(ServerSettings);
@@ -594,9 +603,8 @@ end;
 
 function TLSPInitializeParams.createInitializationOptions: TInitializationOptions;
 begin
-  Result:=TServerSettings.Create;
+  result := TServerSettings.Create;
 end;
-
 
 end.
 
