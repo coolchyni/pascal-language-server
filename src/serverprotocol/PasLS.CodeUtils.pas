@@ -76,6 +76,8 @@ function IdentifierContext(Identifier: TIdentifierListItem; out DetailString: Sh
 
 function ParseParamList(RawList: String): TStringList; overload;
 function ParseParamList(RawList: String; AsSnippet: boolean): String; overload;
+function SplitString(s: String; delimiter: Char): TStringArray;
+function JoinString(const A: array of string; const Sep: string): string;
 
 function ConvertBytesToHumanReadable(bytes: cardinal): ShortString;
 
@@ -390,7 +392,20 @@ begin
   result := IntToStr(bytes)+units[exponent];
 end;
 
-function SplitString (s: string; delimiter: char): TStringArray;
+function JoinString(const A: array of string; const Sep: string): string;
+var
+  i: Integer;
+begin
+  Result := '';
+  for i := 0 to High(A) do
+  begin
+    if i > 0 then
+      Result := Result + Sep;
+    Result := Result + A[i];
+  end;
+end;
+
+function SplitString(s: String; delimiter: Char): TStringArray;
 var
   i: integer;
   c: char;
