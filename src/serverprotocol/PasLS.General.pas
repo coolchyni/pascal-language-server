@@ -248,8 +248,8 @@ end;
 procedure TInitialize.ShowConfigStatus(Params: TInitializeParams; CodeToolsOptions: TCodeToolsOptions);
 var
   ExcludeList, Option: String;
-  FPCOptions: TStringArray;
   I: Integer;
+  FPCOptions: TStringArray;
 begin
   DoLog(kStatusPrefix+'Server: ' + {$INCLUDE %DATE%});
   DoLog(kStatusPrefix+'Client: ' + Params.clientInfo.name + ' ' + Params.clientInfo.version);
@@ -302,8 +302,6 @@ begin
   DoLog(kSettingPrefix+'minimalisticCompletions: ', ServerSettings.minimalisticCompletions);
   DoLog(kSettingPrefix+'showSyntaxErrors: ', ServerSettings.showSyntaxErrors);
   DoLog(kSettingPrefix+'flatSymbolMode: ', ServerSettings.flatSymbolMode);
-  DoLog(kSettingPrefix+'nullDocumentVersion: ', ServerSettings.nullDocumentVersion);
-  DoLog(kSettingPrefix+'filterTextOnly: ', ServerSettings.filterTextOnly);
 
   // Show excludeSymbols
   if ServerSettings.excludeSymbols.Count > 0 then

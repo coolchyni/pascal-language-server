@@ -37,50 +37,23 @@ Type
     function Process(var Params: TCompletionParams): TCompletionList; override;
   end;
 
-  { TCompletionItemHelper }
-
-  type
-    TCompletionItemHelper = class helper for TCompletionItem
-      private
-        procedure SetPrimaryText(text: string);
-        procedure SetSecondaryText(text: string);
-      public
-        property primaryText: string write SetPrimaryText;
-        property secondaryText: string write SetSecondaryText;
-    end;
-
-
-
 implementation
 
 uses
   SysUtils, Contnrs,
   PasLS.CodeUtils, PasLS.Diagnostics, PasLS.Settings;
 
-procedure TCompletionItemHelper.SetPrimaryText(text: string);
-begin
-  filterText := text;
-  if not ServerSettings.filterTextOnly then
-    &label := text;
-end;
-
-procedure TCompletionItemHelper.SetSecondaryText(text: string);
-begin
-  if not ServerSettings.filterTextOnly then
-    &label := text;
-end;
-
-
 { TCompletion }
+
 function TCompletion.KindForIdentifier(Identifier: TIdentifierListItem): TCompletionItemKind;
-var desc:TCodeTreeNodeDesc;
+var
+  desc: TCodeTreeNodeDesc;
 begin
-  
   // PredefinedIdentifiers no node ,use default desc
   if Identifier.Node = nil then
-    desc:=Identifier.DefaultDesc
+    desc := Identifier.DefaultDesc
   else
-    desc:= Identifier.Node.Desc;
+    desc := Identifier.Node.Desc;
 
   // get completion item kind from identifier node
   case desc of
@@ -143,16 +116,12 @@ begin
     ctnEnumIdentifier:
       result := TCompletionItemKind.EnumMemberItem;
     otherwise
-      // Transport.SendDiagnostic('Default kind for %s (%s)', [Identifier.Identifier, Identifier.Node.DescAsString]);
-      //PrintIdentifierTree(Identifier);
       result := TCompletionItemKind.KeywordItem;
   end;
 end;
 
-
 function TCompletion.Process(var Params: TCompletionParams): TCompletionList;
 var
-
   Code: TCodeBuffer;
   X, Y, PStart, PEnd, Count, I: Integer;
   Line: String;
@@ -176,7 +145,6 @@ begin with Params do
          exit;
        end;
 
-
     X := position.character;
     Y := position.line;
     Line := Code.GetLine(Y);
@@ -193,11 +161,10 @@ begin with Params do
       if CodeToolBoss.GatherIdentifiers(Code, X + 1, Y + 1) then
         begin
           Count := CodeToolBoss.IdentifierList.GetFilteredCount;
-          IdentContext := '';
           IdentDetails := '';
+
           for I := 0 to Count - 1 do
             begin
-
               // make sure we don't exceed the maximum completions count
               if (ServerSettings.maximumCompletions > -1) and (I >= ServerSettings.maximumCompletions) then
                 begin
@@ -212,20 +179,10 @@ begin with Params do
 
               if Identifier.IsProcNodeWithParams then
                 begin
-                  //SnippetText := ParseParamList(RawList, True);
-                  //SnippetText := '$0';
-
-                  // the completion is overloaded so increment the overload count
+                  // Ignore duplicate overloads
                   Completion := TCompletionItem(OverloadMap.Find(Identifier.Identifier));
                   if Completion <> nil then
-                    begin
-                      Inc(Completion.overloadCount);
-                      if Completion.overloadCount = 1 then
-                        Completion.secondaryText := '+'+IntToStr(Completion.overloadCount)+' overload'
-                      else
-                        Completion.secondaryText := '+'+IntToStr(Completion.overloadCount)+' overloads';
-                      continue;
-                    end;
+                    continue;
 
                   Kind := KindForIdentifier(Identifier);
 
@@ -233,17 +190,18 @@ begin with Params do
                     continue;
 
                   Completion := Completions.Add;
-                  Completion.primaryText := Identifier.Identifier;
-                  Completion.secondaryText := IdentContext;
+                  Completion.&label := Identifier.Identifier;
                   Completion.kind := Kind;
-
+                  
                   if not ServerSettings.minimalisticCompletions then
                     begin
-                      // todo: make showing parameters in details as an option?
-                      //Completion.detail := IdentDetails+' ('+Identifier.ParamNameList+')';
+                      // TODO: in 3.17 implement labelDetails to show parameters
+                      // then we can consider showing overloads in the list
                       Completion.detail := IdentDetails;
+
                       if ServerSettings.insertCompletionsAsSnippets then
                         begin
+                          // TODO: use `ParseParamList(AsSnippet)` instead of $0
                           Completion.insertText := Identifier.Identifier+'($0)';
                           Completion.insertTextFormat := TInsertTextFormat.Snippet;
                         end
@@ -265,27 +223,19 @@ begin with Params do
                     continue;
 
                   Completion := Completions.Add;
+                  Completion.&label := Identifier.Identifier;
                   if not ServerSettings.minimalisticCompletions then
-                    begin
-                      Completion.secondaryText := IdentContext;
-                      Completion.primaryText := Identifier.Identifier;
-                      Completion.detail := IdentDetails;
-                      Completion.insertText := Identifier.Identifier;
-                      Completion.insertTextFormat := TInsertTextFormat.PlainText;
-                    end
-                  else
-                    begin
-                      Completion.primaryText := Identifier.Identifier;
-                      Completion.secondaryText := Identifier.Identifier;
-                    end;
+                    Completion.detail := IdentDetails;
                   Completion.kind := Kind;
                   Completion.sortText := IntToStr(I);
                 end;
             end;
-        end else begin
-          PublishCodeToolsError(Self.Transport,'');
-          Result.isIncomplete := true;
-        end;
+        end
+          else
+            begin
+              PublishCodeToolsError(Self.Transport,'');
+              Result.isIncomplete := true;
+            end;
     except
       on E: Exception do
         begin

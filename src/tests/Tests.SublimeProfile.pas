@@ -154,8 +154,6 @@ procedure SetupSublimeProfile;
 begin
   // Sublime Text LSP profile settings
   ServerSettings.flatSymbolMode := True;
-  ServerSettings.nullDocumentVersion := True;
-  ServerSettings.filterTextOnly := True;
   ServerSettings.excludeSymbols.Clear;
   ServerSettings.excludeSymbols.Add('sectionContainers');
   ServerSettings.excludeSymbols.Add('interfaceMethodDecls');
@@ -168,8 +166,6 @@ procedure ResetToDefaultProfile;
 begin
   // Default profile settings (show everything)
   ServerSettings.flatSymbolMode := False;
-  ServerSettings.nullDocumentVersion := False;
-  ServerSettings.filterTextOnly := False;
   ServerSettings.excludeSymbols.Clear;
   // Trigger set to update the exclusion set
   ServerSettings.excludeSymbols := ServerSettings.excludeSymbols;

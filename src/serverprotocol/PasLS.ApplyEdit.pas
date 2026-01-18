@@ -58,7 +58,7 @@ begin
     // but ideally you're supposed to provided correct versions.
     // See `OptionalVersionedTextDocumentIdentifier` from
     // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#versionedTextDocumentIdentifier
-    if ServerSettings.nullDocumentVersion then
+    if ClientInfo.name = TClients.SublimeTextLSP then
       TextDocumentEdit.textDocument.version := nil
     else
       TextDocumentEdit.textDocument.version := 0;

@@ -166,8 +166,6 @@ type
     constructor Create(ACollection: TCollection); override;
     destructor destroy; override;
   public
-    // the following private fields are for private us and not part of LSP
-    overloadCount: integer;
     procedure SetAdditionalTextEdits(AValue: TTextEdits);
     procedure SetCommitCharacters(AValue: TStrings);
     procedure SetDocumentation(AValue: TMarkupContent);
