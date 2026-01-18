@@ -39,3 +39,11 @@ packagefiles.xml
 clients/pasls-vscode/node_modules/*
 clients/pasls-vscode/out/*
 *.vsix
+
+# macOS specific
+.DS_Store
+
+# 3rd-party editor projects
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
