@@ -34,3 +34,8 @@ src/standard/lib/
 
 # Lazarus user config
 packagefiles.xml
+
+# VSCode extension
+clients/pasls-vscode/node_modules/*
+clients/pasls-vscode/out/*
+*.vsix
