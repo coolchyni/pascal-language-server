@@ -1668,7 +1668,7 @@ begin
 
             Symbol:= ExtractProcedure(nil, Node);
 
-            if (Symbol<>nil) then
+            if Assigned(Symbol) and (Symbol.name<>'')  then
               begin
                 // Use Builder to add methods or global functions based on containerName
                 if Assigned(Symbol.containerName) then
