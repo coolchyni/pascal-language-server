@@ -172,8 +172,6 @@ begin
 
     DiagnosticsHandler.CheckSyntax(Transport,Code);
   
-    DiagnosticsHandler.CheckSyntax(Transport, Code);
-  
     CheckInactiveRegions(Transport, Code, textDocument.uri);
 
     if SymbolManager <> nil then
