@@ -64,7 +64,7 @@ Type
 implementation
 
 uses
-  SetTransform, SetReturns, SettingsTypes, JcfSettings;
+  SetTransform, SetReturns, SettingsTypes, JcfSettings,PasLS.JcfUINull,JcfUiTools;
 
 { TFileFormatter }
 
@@ -333,6 +333,7 @@ begin
   end;
 
 end;
-
+initialization
+  SetJcfUIClass(TJcfUINull.create);
 end.
 
