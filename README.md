@@ -82,6 +82,11 @@ To build using Lazarus, you need to follow the following steps:
   You can compile this package in the IDE, but this is not needed: The
 Lazarus IDE and Lazbuild simply need to know where itis.
 
+* open the `lspserver.lpk` package in Lazarus. It is located in the
+  [src/serverprotocol](src/serverprotocol) directory.
+  You can compile this package in the IDE, but this is not needed: The
+Lazarus IDE and Lazbuild simply need to know where itis.
+
 * open the `src/standard/pasls.lpi` project file in Lazarus, and compile the
   program. or use the lazbuid commandline:
 
