@@ -13,18 +13,108 @@ env:
   LAZARUS_VERSION: "lazarus_4_0"
 
 jobs:
-  # Native builds for all platforms
+  # Linux builds use a Rocky Linux 8 container so release binaries stay
+  # compatible with glibc 2.28.
+  build-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-linux
+          - os: ubuntu-24.04-arm
+            target: aarch64-linux
+
+    runs-on: ${{ matrix.os }}
+    container:
+      image: rockylinux:8
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies (Linux)
+        shell: bash
+        run: |
+          dnf install -y bash binutils ca-certificates curl gcc git glibc-devel tar xz
+          update-ca-trust
+
+      - name: Install FPC (Linux)
+        shell: bash
+        run: |
+          FPC_VERSION="3.2.2"
+          FPC_PREFIX="/opt/fpc"
+          FPC_ARCHIVE="fpc-${FPC_VERSION}.${{ matrix.target }}.tar"
+          FPC_BASE_URL="https://downloads.sourceforge.net/project/freepascal/Linux/${FPC_VERSION}"
+
+          echo "Downloading FPC: $FPC_ARCHIVE"
+          curl -fsSL -o /tmp/fpc.tar "${FPC_BASE_URL}/${FPC_ARCHIVE}"
+
+          mkdir -p /tmp/fpc
+          tar -xf /tmp/fpc.tar -C /tmp/fpc
+
+          cd "/tmp/fpc/fpc-${FPC_VERSION}.${{ matrix.target }}"
+          printf '%s\n' "$FPC_PREFIX" n n n | ./install.sh
+
+          echo "FPC=$FPC_PREFIX/bin/fpc" >> "$GITHUB_ENV"
+          echo "$FPC_PREFIX/bin" >> "$GITHUB_PATH"
+
+          "$FPC_PREFIX/bin/fpc" -iV
+
+      - name: Download Lazarus source
+        shell: bash
+        run: |
+          git clone --depth 1 --branch ${{ env.LAZARUS_VERSION }} \
+            https://gitlab.com/freepascal.org/lazarus/lazarus.git \
+            /tmp/lazarus
+
+      - name: Build pasls
+        shell: bash
+        run: |
+          export LAZARUSDIR=/tmp/lazarus
+          cd src
+          chmod +x build_fpc.sh
+          ./build_fpc.sh ${{ matrix.target }}
+
+      - name: Build tests
+        shell: bash
+        run: |
+          export LAZARUSDIR=/tmp/lazarus
+          cd src
+          ./build_fpc.sh ${{ matrix.target }} --tests
+
+      - name: Run tests (Linux)
+        shell: bash
+        run: |
+          chmod +x build/${{ matrix.target }}/testlsp
+          build/${{ matrix.target }}/testlsp
+
+      - name: Verify GLIBC compatibility
+        shell: bash
+        run: |
+          PASLS_BIN="dist/${{ matrix.target }}/pasls"
+          max_glibc=$(strings "$PASLS_BIN" | grep -o 'GLIBC_[0-9]\+\.[0-9]\+' | sort -Vu | tail -1 || true)
+
+          echo "Detected max GLIBC symbol: ${max_glibc:-none}"
+
+          if [ -n "$max_glibc" ] && [ "$(printf '%s\n' "$max_glibc" 'GLIBC_2.28' | sort -V | tail -1)" != 'GLIBC_2.28' ]; then
+            echo "Binary requires $max_glibc, which is newer than GLIBC_2.28"
+            exit 1
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pasls-${{ matrix.target }}
+          path: dist/${{ matrix.target }}/pasls*
+          if-no-files-found: error
+
+  # Native builds for macOS and Windows
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64
-          - os: ubuntu-latest
-            target: x86_64-linux
-          # Linux ARM64
-          - os: ubuntu-24.04-arm
-            target: aarch64-linux
           # macOS Intel
           - os: macos-15-intel
             target: x86_64-darwin
@@ -43,13 +133,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # Install FPC on Linux
-      - name: Install FPC (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y fpc
 
       # Install FPC on macOS
       - name: Install FPC (macOS)
@@ -149,7 +232,7 @@ jobs:
 
   # Combine all artifacts into a single download
   package:
-    needs: [build]
+    needs: [build-linux, build]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -169,7 +252,7 @@ jobs:
 
   # Create GitHub Release when a tag is pushed
   release:
-    needs: [build]
+    needs: [build-linux, build]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
